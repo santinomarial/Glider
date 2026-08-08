@@ -15,6 +15,8 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
@@ -247,6 +249,33 @@ func validatePorts(ports []PortMapping) error {
 		seen[key] = true
 	}
 	return nil
+}
+
+func ParsePortMapping(value string) (PortMapping, error) {
+	var p PortMapping
+	p.Protocol = "tcp"
+	main, protocol, hasProtocol := strings.Cut(value, "/")
+	if hasProtocol {
+		p.Protocol = strings.ToLower(protocol)
+	}
+	host, container, ok := strings.Cut(main, ":")
+	if !ok {
+		return p, fmt.Errorf("port mapping %q must be HOST:CONTAINER[/tcp|udp]", value)
+	}
+	h, err := strconv.ParseUint(host, 10, 16)
+	if err != nil {
+		return p, fmt.Errorf("invalid host port: %w", err)
+	}
+	c, err := strconv.ParseUint(container, 10, 16)
+	if err != nil {
+		return p, fmt.Errorf("invalid container port: %w", err)
+	}
+	p.HostPort = uint16(h)
+	p.ContainerPort = uint16(c)
+	if err := validatePorts([]PortMapping{p}); err != nil {
+		return p, err
+	}
+	return p, nil
 }
 func (m *Manager) path(owner string) string { return filepath.Join(m.root, "endpoints", owner+".json") }
 func (m *Manager) save(ep Endpoint) error {

@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	imagemanager "github.com/santinomarial/glider/internal/image/manager"
@@ -90,6 +91,8 @@ func runCmd(args []string) int {
 	insecureRegistry := fs.Bool("insecure-registry", false, "use plain HTTP for a development registry (never for production registries)")
 	networkCIDR := fs.String("network-cidr", "10.64.0.0/24", "node-local container subnet")
 	noNetwork := fs.Bool("no-network", false, "leave the container network namespace loopback-only")
+	var publish multiFlag
+	fs.Var(&publish, "publish", "publish HOST:CONTAINER[/tcp|udp] (repeatable)")
 	hostname := fs.String("hostname", "glider", "hostname to set inside the container's UTS namespace")
 	stateDir := fs.String("state-dir", "", "override the default state directory (/var/lib/glider/containers); primarily for tests")
 	stopGrace := fs.Duration("stop-grace", 0, "grace period between forwarding SIGTERM and escalating to SIGKILL (default 10s if unset or zero)")
@@ -175,6 +178,15 @@ func runCmd(args []string) int {
 		}
 	}
 	var networkManager *containernetwork.Manager
+	var portMappings []containernetwork.PortMapping
+	for _, raw := range publish {
+		mapping, err := containernetwork.ParsePortMapping(raw)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime: --publish:", err)
+			return 2
+		}
+		portMappings = append(portMappings, mapping)
+	}
 	if !*noNetwork {
 		networkManager, err = containernetwork.NewManager(filepath.Join(*dataDir, "network"), *networkCIDR, containernetwork.DefaultBridge)
 		if err != nil {
@@ -186,6 +198,10 @@ func runCmd(args []string) int {
 				fmt.Fprintln(os.Stderr, "glider-runtime: remove network:", err)
 			}
 		}()
+		if err := containernetwork.ConfigureDNS(*rootfs, containernetwork.HostNameservers()); err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime: configure container DNS:", err)
+			return 1
+		}
 	}
 
 	cfg := process.Config{
@@ -201,7 +217,7 @@ func runCmd(args []string) int {
 	}
 	if networkManager != nil {
 		cfg.ConfigureNetwork = func(initPID int) error {
-			_, err := networkManager.Ensure(context.Background(), id, initPID)
+			_, err := networkManager.EnsureWithPorts(context.Background(), id, initPID, portMappings)
 			return err
 		}
 	}
@@ -230,6 +246,11 @@ func runCmd(args []string) int {
 	}
 	return exitCode
 }
+
+type multiFlag []string
+
+func (f *multiFlag) String() string         { return strings.Join(*f, ",") }
+func (f *multiFlag) Set(value string) error { *f = append(*f, value); return nil }
 
 func recoverCmd(args []string) int {
 	fs := flag.NewFlagSet("recover", flag.ContinueOnError)
