@@ -199,7 +199,9 @@ func runSupervisor(path string, argv []string, resultW *os.File, cfg supervisorC
 	signal.Notify(sigCh, notified...)
 
 	execStatusR, execStatusW, err := os.Pipe()
-	if err != nil { fail(resultW, fmt.Errorf("create workload exec-status pipe: %w", err)) }
+	if err != nil {
+		fail(resultW, fmt.Errorf("create workload exec-status pipe: %w", err))
+	}
 	cmd := &exec.Cmd{
 		Path:   "/proc/self/exe",
 		Args:   append([]string{"/proc/self/exe", ReexecWorkloadArg, path}, argv...),
@@ -214,11 +216,12 @@ func runSupervisor(path string, argv []string, resultW *os.File, cfg supervisorC
 		// itself called setsid() to leave the group (a documented
 		// limitation, not a security property — see runtime.md §5).
 		SysProcAttr: &syscall.SysProcAttr{Setpgid: true},
-		ExtraFiles: []*os.File{execStatusW},
+		ExtraFiles:  []*os.File{execStatusW},
 	}
 
 	if err := cmd.Start(); err != nil {
-		execStatusR.Close(); execStatusW.Close()
+		execStatusR.Close()
+		execStatusW.Close()
 		fail(resultW, fmt.Errorf("start workload %q: %w", argv[0], err))
 	}
 	execStatusW.Close()
@@ -229,8 +232,12 @@ func runSupervisor(path string, argv []string, resultW *os.File, cfg supervisorC
 		_ = syscall.Kill(-mainPID, syscall.SIGKILL)
 		_, _ = cmd.Process.Wait()
 		reason := string(execResult)
-		if len(execResult) > 0 && execResult[0] == 1 { reason = string(execResult[1:]) }
-		if reason == "" { reason = fmt.Sprint(readErr) }
+		if len(execResult) > 0 && execResult[0] == 1 {
+			reason = string(execResult[1:])
+		}
+		if reason == "" {
+			reason = fmt.Sprint(readErr)
+		}
 		fail(resultW, fmt.Errorf("secure workload exec failed: %s", reason))
 	}
 

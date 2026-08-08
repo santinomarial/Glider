@@ -19,10 +19,22 @@ func RunWorkload(args []string) {
 		fmt.Fprintln(os.Stderr, "glider-runtime: __glider_workload__ is an internal entrypoint")
 		os.Exit(2)
 	}
-	if err := setCloseOnExec(fdWorkloadExecStatus); err != nil { workloadFail(status, err) }
-	if _, err := status.Write([]byte{1}); err != nil { os.Exit(2) }
-	if err := security.ApplyDefault(); err != nil { workloadFail(status, err) }
-	if err := syscall.Exec(args[0], args[1:], os.Environ()); err != nil { workloadFail(status, fmt.Errorf("exec workload: %w", err)) }
+	if err := setCloseOnExec(fdWorkloadExecStatus); err != nil {
+		workloadFail(status, err)
+	}
+	if _, err := status.Write([]byte{1}); err != nil {
+		os.Exit(2)
+	}
+	if err := security.ApplyDefault(); err != nil {
+		workloadFail(status, err)
+	}
+	if err := syscall.Exec(args[0], args[1:], os.Environ()); err != nil {
+		workloadFail(status, fmt.Errorf("exec workload: %w", err))
+	}
 }
 
-func workloadFail(status *os.File, err error) { _, _ = status.Write([]byte(err.Error())); _ = status.Close(); os.Exit(1) }
+func workloadFail(status *os.File, err error) {
+	_, _ = status.Write([]byte(err.Error()))
+	_ = status.Close()
+	os.Exit(1)
+}
