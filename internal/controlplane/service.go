@@ -81,6 +81,16 @@ func (s *Service) ListWorkloads(ctx context.Context, _ *structpb.Struct) (*struc
 	values, err := s.store.ListWorkloads(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
 }
+func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	var service api.Service
+	if err := decode(in, &service); err != nil { return nil, invalid(err) }
+	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
+	return encode(saved, mapError(err))
+}
+func (s *Service) ListServices(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
+	values, err := s.store.ListServices(ctx)
+	return encode(map[string]any{"items": values}, mapError(err))
+}
 func (s *Service) Schedule(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "task_id")
 	if err != nil {
@@ -152,6 +162,8 @@ type server interface {
 	ListAssignments(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListWorkloads(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	PutService(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	ListServices(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	Schedule(context.Context, *structpb.Struct) (*structpb.Struct, error)
 }
 
@@ -197,6 +209,8 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	unary("ListWorkloads", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListWorkloads(c, r)
 	}),
+	unary("PutService", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) { return s.PutService(c,r) }),
+	unary("ListServices", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) { return s.ListServices(c,r) }),
 	unary("Schedule", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.Schedule(c, r)
 	}),

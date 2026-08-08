@@ -15,8 +15,10 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/santinomarial/glider/internal/api"
+	servicecontroller "github.com/santinomarial/glider/internal/controller/service"
 	workloadcontroller "github.com/santinomarial/glider/internal/controller/workload"
 	"github.com/santinomarial/glider/internal/controlplane"
+	"github.com/santinomarial/glider/internal/discovery"
 	"github.com/santinomarial/glider/internal/lease"
 	"github.com/santinomarial/glider/internal/scheduler"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
@@ -26,6 +28,7 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8443", "gRPC listen address")
 	endpoints := flag.String("etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	clusterID := flag.String("cluster-id", "default", "Glider cluster ID")
+	dnsListen := flag.String("dns-listen", "", "optional authoritative cluster DNS UDP address (for example :53)")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -52,11 +55,19 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	services, err := servicecontroller.New(store)
+	if err != nil { fatal(err) }
 	schedulerController, err := scheduler.NewController(store)
 	if err != nil {
 		fatal(err)
 	}
 	go func() { _ = workloads.Run(ctx, 2*time.Second) }()
+	go func() { _ = services.Run(ctx, 2*time.Second) }()
+	if *dnsListen != "" {
+		dns, err := discovery.NewDNS(store); if err != nil { fatal(err) }
+		go func() { if err := dns.ServeUDP(ctx, *dnsListen); err != nil && ctx.Err()==nil { fatal(err) } }()
+		fmt.Fprintf(os.Stderr, "glider-controlplane: cluster DNS listening on %s/udp\n", *dnsListen)
+	}
 	go schedulePending(ctx, store, schedulerController)
 	go func() { _ = lease.NewMonitor(client, *clusterID, store, 20*time.Second, 2*time.Second).Run(ctx) }()
 	go func() { <-ctx.Done(); server.GracefulStop() }()
