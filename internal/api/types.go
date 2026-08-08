@@ -159,6 +159,8 @@ type Assignment struct {
 	Resources  Resources `json:"resources"`
 	Image      string    `json:"image"`
 	Command    []string  `json:"command,omitempty"`
+	RestartPolicy RestartPolicy `json:"restart_policy,omitempty"`
+	Health HealthSpec `json:"health,omitempty"`
 	HostPorts  []uint16  `json:"host_ports,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
