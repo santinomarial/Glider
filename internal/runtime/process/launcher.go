@@ -234,6 +234,15 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 		}
 		return failLaunch(dir, &rec, fmt.Errorf("verify cgroup attachment: %w", err))
 	}
+	if cfg.ConfigureNetwork != nil {
+		if err := cfg.ConfigureNetwork(initIdentity.PID); err != nil {
+			goW.Close()
+			resultR.Close()
+			_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
+			reap()
+			return failLaunch(dir, &rec, fmt.Errorf("configure container network: %w", err))
+		}
+	}
 
 	if err := saveTransition(dir, &rec, state.Created); err != nil {
 		goW.Close()

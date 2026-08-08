@@ -25,9 +25,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	imagemanager "github.com/santinomarial/glider/internal/image/manager"
+	containernetwork "github.com/santinomarial/glider/internal/network"
 	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/process"
 )
@@ -86,6 +88,8 @@ func runCmd(args []string) int {
 	imageRef := fs.String("image", "", "OCI image reference to pull, unpack, and run")
 	dataDir := fs.String("data-dir", "/var/lib/glider", "Glider image/content/snapshot data root")
 	insecureRegistry := fs.Bool("insecure-registry", false, "use plain HTTP for a development registry (never for production registries)")
+	networkCIDR := fs.String("network-cidr", "10.64.0.0/24", "node-local container subnet")
+	noNetwork := fs.Bool("no-network", false, "leave the container network namespace loopback-only")
 	hostname := fs.String("hostname", "glider", "hostname to set inside the container's UTS namespace")
 	stateDir := fs.String("state-dir", "", "override the default state directory (/var/lib/glider/containers); primarily for tests")
 	stopGrace := fs.Duration("stop-grace", 0, "grace period between forwarding SIGTERM and escalating to SIGKILL (default 10s if unset or zero)")
@@ -170,6 +174,19 @@ func runCmd(args []string) int {
 			return 2
 		}
 	}
+	var networkManager *containernetwork.Manager
+	if !*noNetwork {
+		networkManager, err = containernetwork.NewManager(filepath.Join(*dataDir, "network"), *networkCIDR, containernetwork.DefaultBridge)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime: initialize network:", err)
+			return 1
+		}
+		defer func() {
+			if err := networkManager.Remove(id); err != nil {
+				fmt.Fprintln(os.Stderr, "glider-runtime: remove network:", err)
+			}
+		}()
+	}
 
 	cfg := process.Config{
 		RootFS:      *rootfs,
@@ -181,6 +198,12 @@ func runCmd(args []string) int {
 		Resources:   resources,
 		Env:         imageEnv,
 		WorkingDir:  workingDir,
+	}
+	if networkManager != nil {
+		cfg.ConfigureNetwork = func(initPID int) error {
+			_, err := networkManager.Ensure(context.Background(), id, initPID)
+			return err
+		}
 	}
 
 	// SIGTERM/SIGINT delivered to glider-runtime itself (e.g. an operator

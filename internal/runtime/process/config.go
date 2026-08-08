@@ -119,6 +119,11 @@ type Config struct {
 	// image manager prepares RootFS. Env entries use KEY=VALUE form.
 	Env        []string
 	WorkingDir string
+
+	// ConfigureNetwork runs after glider-init's network namespace exists and
+	// cgroup attachment succeeds, but before CREATED and before the workload
+	// go-ahead. Phase 9 uses it to attach/configure the veth endpoint.
+	ConfigureNetwork func(initPID int) error
 }
 
 const defaultStateDir = "/var/lib/glider/containers"
