@@ -83,7 +83,9 @@ func (s *Service) ListWorkloads(ctx context.Context, _ *structpb.Struct) (*struc
 }
 func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var service api.Service
-	if err := decode(in, &service); err != nil { return nil, invalid(err) }
+	if err := decode(in, &service); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
 	return encode(saved, mapError(err))
 }
@@ -209,8 +211,12 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	unary("ListWorkloads", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListWorkloads(c, r)
 	}),
-	unary("PutService", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) { return s.PutService(c,r) }),
-	unary("ListServices", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) { return s.ListServices(c,r) }),
+	unary("PutService", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.PutService(c, r)
+	}),
+	unary("ListServices", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.ListServices(c, r)
+	}),
 	unary("Schedule", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.Schedule(c, r)
 	}),

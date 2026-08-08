@@ -56,7 +56,9 @@ func main() {
 		fatal(err)
 	}
 	services, err := servicecontroller.New(store)
-	if err != nil { fatal(err) }
+	if err != nil {
+		fatal(err)
+	}
 	schedulerController, err := scheduler.NewController(store)
 	if err != nil {
 		fatal(err)
@@ -64,8 +66,15 @@ func main() {
 	go func() { _ = workloads.Run(ctx, 2*time.Second) }()
 	go func() { _ = services.Run(ctx, 2*time.Second) }()
 	if *dnsListen != "" {
-		dns, err := discovery.NewDNS(store); if err != nil { fatal(err) }
-		go func() { if err := dns.ServeUDP(ctx, *dnsListen); err != nil && ctx.Err()==nil { fatal(err) } }()
+		dns, err := discovery.NewDNS(store)
+		if err != nil {
+			fatal(err)
+		}
+		go func() {
+			if err := dns.ServeUDP(ctx, *dnsListen); err != nil && ctx.Err() == nil {
+				fatal(err)
+			}
+		}()
 		fmt.Fprintf(os.Stderr, "glider-controlplane: cluster DNS listening on %s/udp\n", *dnsListen)
 	}
 	go schedulePending(ctx, store, schedulerController)

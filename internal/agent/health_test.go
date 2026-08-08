@@ -23,11 +23,13 @@ func (s *healthFakeStore) ReportTaskHealth(_ context.Context, _ string, _ int64,
 	return nil
 }
 func (s *healthFakeStore) ReportTaskEndpoint(_ context.Context, _ string, _ int64, address string) error {
-	s.addresses = append(s.addresses, address); return nil
+	s.addresses = append(s.addresses, address)
+	return nil
 }
 func (s *healthFakeStore) RestartTask(context.Context, string, int64) error { s.restarts++; return nil }
 
 type healthFakeChecker struct{ fail bool }
+
 func (c healthFakeChecker) EndpointAddress(api.Assignment) (string, error) { return "10.64.0.2", nil }
 
 func (c healthFakeChecker) CheckProbe(context.Context, api.Assignment, api.Probe) error {

@@ -104,11 +104,15 @@ func setRevision[T any](v *T, rev int64) {
 }
 func (s *Store) ListServices(ctx context.Context) ([]api.Service, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("services"), clientv3.WithPrefix())
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out := make([]api.Service, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
 		var service api.Service
-		if err := json.Unmarshal(kv.Value, &service); err != nil { return nil, err }
+		if err := json.Unmarshal(kv.Value, &service); err != nil {
+			return nil, err
+		}
 		service.Metadata.Revision = kv.ModRevision
 		out = append(out, service)
 	}
@@ -263,6 +267,7 @@ func (s *Store) EvictNodeAssignments(ctx context.Context, nodeID string) error {
 		node.Metadata.Revision = 0
 		task.Status.Phase = api.TaskPending
 		task.Status.NodeID = ""
+		task.Status.Address = ""
 		task.Status.Ready = false
 		task.Metadata.Revision = 0
 		nodeData, _ := json.Marshal(node)
@@ -304,16 +309,26 @@ func (s *Store) ReportTaskHealth(ctx context.Context, taskID string, generation 
 }
 func (s *Store) ReportTaskEndpoint(ctx context.Context, taskID string, generation int64, address string) error {
 	task, err := s.GetTask(ctx, taskID)
-	if err != nil { return err }
-	if task.Status.AssignmentGeneration != generation { return storeapi.ErrConflict }
-	if task.Status.Address == address { return nil }
+	if err != nil {
+		return err
+	}
+	if task.Status.AssignmentGeneration != generation {
+		return storeapi.ErrConflict
+	}
+	if task.Status.Address == address {
+		return nil
+	}
 	revision := task.Metadata.Revision
 	task.Metadata.Revision = 0
 	task.Status.Address = address
 	data, _ := json.Marshal(task)
 	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks", taskID)), "=", revision)).Then(clientv3.OpPut(s.key("tasks", taskID), string(data))).Commit()
-	if err != nil { return err }
-	if !resp.Succeeded { return storeapi.ErrConflict }
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		return storeapi.ErrConflict
+	}
 	return nil
 }
 
@@ -354,6 +369,7 @@ func (s *Store) RestartTask(ctx context.Context, taskID string, generation int64
 	task.Metadata.Revision = 0
 	task.Status.Phase = api.TaskPending
 	task.Status.NodeID = ""
+	task.Status.Address = ""
 	task.Status.Ready = false
 	task.Status.RestartCount++
 	node.Metadata.Revision = 0

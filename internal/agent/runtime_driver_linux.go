@@ -89,7 +89,9 @@ func (d *RuntimeDriver) CheckProbe(ctx context.Context, a api.Assignment, probe 
 
 func (d *RuntimeDriver) EndpointAddress(a api.Assignment) (string, error) {
 	endpoint, err := d.network.Endpoint(containerID(a))
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	return endpoint.Address.String(), nil
 }
 
