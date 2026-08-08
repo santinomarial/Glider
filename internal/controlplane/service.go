@@ -71,7 +71,9 @@ func (s *Service) ListAssignments(ctx context.Context, _ *structpb.Struct) (*str
 }
 func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var workload api.Workload
-	if err := decode(in, &workload); err != nil { return nil, invalid(err) }
+	if err := decode(in, &workload); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutWorkload(ctx, workload, workload.Metadata.Revision)
 	return encode(saved, mapError(err))
 }

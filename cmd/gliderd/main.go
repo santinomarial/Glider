@@ -17,6 +17,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/santinomarial/glider/internal/agent"
+	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/lease"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 )
@@ -72,6 +73,7 @@ func main() {
 	defer cancelRun()
 	errs := make(chan error, 2)
 	go func() { errs <- daemon.Run(runCtx) }()
+	go reconcileOverlay(runCtx, nodeID, store, driver, resync)
 	go func() {
 		errs <- leaseManager.Run(ctx, func(context.Context) error {
 			cancelRun()
@@ -96,3 +98,34 @@ func split(value string) []string {
 	return out
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "gliderd:", err); os.Exit(1) }
+
+type nodeLister interface {
+	ListNodes(context.Context) ([]api.Node, error)
+}
+
+func reconcileOverlay(ctx context.Context, nodeID string, store nodeLister, driver *agent.RuntimeDriver, period time.Duration) {
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+	for {
+		nodes, err := store.ListNodes(ctx)
+		if err == nil {
+			var local api.Node
+			var peers []api.Node
+			for _, node := range nodes {
+				if node.Metadata.ID == nodeID {
+					local = node
+				} else {
+					peers = append(peers, node)
+				}
+			}
+			if local.Spec.TunnelAddress != "" {
+				_ = driver.EnsureOverlay(local.Spec.TunnelAddress, peers, 1450)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}

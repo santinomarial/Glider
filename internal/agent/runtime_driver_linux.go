@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -30,6 +31,29 @@ type RuntimeDriver struct {
 	images       *imagemanager.Manager
 	network      *containernetwork.Manager
 	startTimeout time.Duration
+}
+
+func (d *RuntimeDriver) EnsureOverlay(localTunnel string, peers []api.Node, mtu int) error {
+	local, err := netip.ParseAddr(localTunnel)
+	if err != nil {
+		return err
+	}
+	desired := make([]containernetwork.Peer, 0, len(peers))
+	for _, node := range peers {
+		if node.Status.Phase != api.NodeReady || node.Spec.PodCIDR == "" || node.Spec.TunnelAddress == "" {
+			continue
+		}
+		cidr, err := netip.ParsePrefix(node.Spec.PodCIDR)
+		if err != nil {
+			return err
+		}
+		tunnel, err := netip.ParseAddr(node.Spec.TunnelAddress)
+		if err != nil {
+			return err
+		}
+		desired = append(desired, containernetwork.Peer{NodeID: node.Metadata.ID, PodCIDR: cidr, TunnelAddress: tunnel})
+	}
+	return d.network.EnsureOverlay(local, desired, mtu)
 }
 
 func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*RuntimeDriver, error) {
