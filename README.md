@@ -8,7 +8,7 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **Phase 22 — adversarial security gate**. Glider now
+Status: **Phase 23 — reproducible performance baselines**. Glider now
 adds bridge/veth networking, persistent IPAM, DNS, NAT and host-port
 publication; a restart-safe `gliderd` reconciliation loop; an etcd-backed
 versioned gRPC control plane; and a resource-aware scheduler whose assignment
@@ -43,6 +43,7 @@ See [docs/design/observability.md](docs/design/observability.md) for Phase 19.
 See [docs/design/cli.md](docs/design/cli.md) for Phase 20.
 See [docs/testing/chaos.md](docs/testing/chaos.md) for Phase 21.
 See [docs/testing/security.md](docs/testing/security.md) for Phase 22.
+See [docs/testing/performance.md](docs/testing/performance.md) for Phase 23.
 
 Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
 run of the full unit + integration test suite (re-execs itself inside a
