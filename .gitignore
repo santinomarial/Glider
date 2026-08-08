@@ -1,0 +1,17 @@
+# Build artifacts
+/bin/
+/dist/
+*.test
+*.out
+
+# Local runtime state (never committed — this is exactly the kind of
+# node-local disk state described in docs/design/failure-model.md)
+/var/
+
+# Go
+/vendor/
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
