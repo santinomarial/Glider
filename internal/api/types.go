@@ -113,14 +113,16 @@ type Task struct {
 	Status     TaskStatus `json:"status"`
 }
 type TaskSpec struct {
-	WorkloadID    string            `json:"workload_id"`
-	Image         string            `json:"image"`
-	Command       []string          `json:"command,omitempty"`
-	Resources     Resources         `json:"resources"`
-	NodeSelector  map[string]string `json:"node_selector,omitempty"`
-	HostPorts     []uint16          `json:"host_ports,omitempty"`
-	RestartPolicy RestartPolicy     `json:"restart_policy,omitempty"`
-	Health        HealthSpec        `json:"health,omitempty"`
+	WorkloadID       string            `json:"workload_id"`
+	Image            string            `json:"image"`
+	Command          []string          `json:"command,omitempty"`
+	Resources        Resources         `json:"resources"`
+	NodeSelector     map[string]string `json:"node_selector,omitempty"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	TemplateRevision string            `json:"template_revision,omitempty"`
+	HostPorts        []uint16          `json:"host_ports,omitempty"`
+	RestartPolicy    RestartPolicy     `json:"restart_policy,omitempty"`
+	Health           HealthSpec        `json:"health,omitempty"`
 }
 
 type Workload struct {
@@ -130,15 +132,27 @@ type Workload struct {
 	Status     WorkloadStatus `json:"status"`
 }
 type WorkloadSpec struct {
-	Replicas int      `json:"replicas"`
-	Template TaskSpec `json:"template"`
+	Replicas int             `json:"replicas"`
+	Template TaskSpec        `json:"template"`
+	Rollout  RolloutStrategy `json:"rollout"`
+}
+type RolloutStrategy struct {
+	MaxSurge         int           `json:"max_surge"`
+	MaxUnavailable   int           `json:"max_unavailable"`
+	ProgressDeadline time.Duration `json:"progress_deadline,omitempty"`
 }
 type WorkloadStatus struct {
-	ObservedGeneration int64 `json:"observed_generation"`
-	DesiredReplicas    int   `json:"desired_replicas"`
-	CurrentReplicas    int   `json:"current_replicas"`
-	ReadyReplicas      int   `json:"ready_replicas"`
-	UpdatedReplicas    int   `json:"updated_replicas"`
+	ObservedGeneration int64     `json:"observed_generation"`
+	DesiredReplicas    int       `json:"desired_replicas"`
+	CurrentReplicas    int       `json:"current_replicas"`
+	ReadyReplicas      int       `json:"ready_replicas"`
+	UpdatedReplicas    int       `json:"updated_replicas"`
+	CurrentRevision    string    `json:"current_revision,omitempty"`
+	UpdateRevision     string    `json:"update_revision,omitempty"`
+	RolloutStartedAt   time.Time `json:"rollout_started_at,omitempty"`
+	LastProgressAt     time.Time `json:"last_progress_at,omitempty"`
+	RolloutPhase       string    `json:"rollout_phase,omitempty"`
+	RolloutMessage     string    `json:"rollout_message,omitempty"`
 }
 type TaskStatus struct {
 	Phase                TaskPhase `json:"phase"`
