@@ -19,10 +19,22 @@ import (
 // privatizeMountTree must already have run, per the ordering fixed in
 // init.go.
 func pivotRoot(root string) error {
-	oldRoot := filepath.Join(root, ".oldroot")
-	if err := os.MkdirAll(oldRoot, 0o700); err != nil {
+	// The scratch directory pivot_root needs for the old root must have a
+	// name unique to this invocation, not a fixed ".oldroot": Phase 1/2
+	// deliberately allow multiple concurrent containers to run against the
+	// same --rootfs (no OverlayFS until Phase 5-7, ADR-0004) — each gets
+	// its own *mount namespace*, but the underlying directory entries of a
+	// bind-mounted-onto-itself root are the same shared on-disk directory
+	// across all of them. A fixed name means one container's cleanup
+	// (rmdir) could race and remove another still-in-progress container's
+	// pivot target out from under it. os.MkdirTemp creates an atomically
+	// unique name, closing that race without requiring any coordination
+	// between concurrent glider-init processes.
+	oldRoot, err := os.MkdirTemp(root, ".oldroot-*")
+	if err != nil {
 		return fmt.Errorf("create pivot_root old-root target: %w", err)
 	}
+	oldRootName := filepath.Base(oldRoot)
 
 	if err := syscall.PivotRoot(root, oldRoot); err != nil {
 		return fmt.Errorf("pivot_root: %w", err)
@@ -35,14 +47,16 @@ func pivotRoot(root string) error {
 		return fmt.Errorf("chdir to new root: %w", err)
 	}
 
-	// The old root is now mounted at /.oldroot, still busy (it's still the
-	// mount pivot_root left it as); MNT_DETACH lazily unmounts it — it
-	// disappears from the namespace's view immediately, with the kernel
-	// releasing the underlying mount once nothing still references it.
-	if err := syscall.Unmount("/.oldroot", syscall.MNT_DETACH); err != nil {
+	// The old root is now mounted at /<oldRootName>, still busy (it's
+	// still the mount pivot_root left it as); MNT_DETACH lazily unmounts
+	// it — it disappears from the namespace's view immediately, with the
+	// kernel releasing the underlying mount once nothing still references
+	// it.
+	oldRootPath := "/" + oldRootName
+	if err := syscall.Unmount(oldRootPath, syscall.MNT_DETACH); err != nil {
 		return fmt.Errorf("unmount old root: %w", err)
 	}
-	if err := os.RemoveAll("/.oldroot"); err != nil {
+	if err := os.RemoveAll(oldRootPath); err != nil {
 		return fmt.Errorf("remove old-root directory: %w", err)
 	}
 

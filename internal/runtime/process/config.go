@@ -2,6 +2,8 @@
 
 package process
 
+import "time"
+
 // ReexecArg is the internal re-exec entrypoint argument recognized by
 // cmd/glider-runtime's main(), matching runtime.md §1's
 // "<binary> __glider_init__" invocation. It is deliberately not documented
@@ -18,33 +20,59 @@ const ReexecArg = "__glider_init__"
 // fixed numbers) — not something the child discovers dynamically, since
 // there is exactly one supported invocation shape.
 const (
-	fdReadyWrite = 3 // child -> parent: "mount setup complete"
-	fdGoRead     = 4 // parent -> child: "proceed to pivot_root + exec"
-	fdErrWrite   = 5 // child -> parent: error message, or CLOEXEC-closed on exec success
+	fdReadyWrite  = 3 // child -> parent: "mount setup complete"
+	fdGoRead      = 4 // parent -> child: "proceed to pivot_root + fork/exec workload"
+	fdResultWrite = 5 // child -> parent: FAIL/RUNNING result message (protocol.go)
 )
 
-// envRootFS and envHostname carry the launch configuration that isn't
-// naturally expressed as trailing argv (runtime.md's `-- <cmd> [args...]`
-// already carries the workload command). Phase 1 has no need to hide these
-// values, so plain environment variables are simpler and more debuggable
-// than adding a fourth configuration pipe (visible via `ps`/`/proc/<pid>/environ`,
-// which is a feature during development, not a leak of anything sensitive).
+// envRootFS, envHostname, envStateDir, envContainerID, and envStopGrace
+// carry launch configuration that isn't naturally expressed as trailing
+// argv (runtime.md's `-- <cmd> [args...]` already carries the workload
+// command). Phase 1 had no need to hide these values, so plain environment
+// variables remain simpler and more debuggable than a configuration pipe
+// (visible via `ps`/`/proc/<pid>/environ`, a feature during development,
+// not a leak of anything sensitive).
+//
+// envStateDir and envContainerID are new in Phase 2: glider-init durably
+// writes the container's terminal EXITED transition itself (docs/adr/0006),
+// so it needs to know where and under what ID, independent of whether its
+// launcher parent is still alive to tell it anything further.
 const (
-	envRootFS   = "_GLIDER_ROOTFS"
-	envHostname = "_GLIDER_HOSTNAME"
+	envRootFS      = "_GLIDER_ROOTFS"
+	envHostname    = "_GLIDER_HOSTNAME"
+	envStateDir    = "_GLIDER_STATE_DIR"
+	envContainerID = "_GLIDER_CONTAINER_ID"
+	envStopGrace   = "_GLIDER_STOP_GRACE"
 )
 
-// Config describes a single Phase 1 container launch, corresponding
+// defaultStopGrace is how long glider-init waits after forwarding SIGTERM
+// to the workload before escalating to SIGKILL (§6 "Graceful shutdown
+// protocol"). Phase 1 used a fixed 10s launcher-side value; Phase 2 keeps
+// 10s as the production default (no evidence yet that it's wrong for real
+// workloads) but makes it configurable so tests aren't forced to actually
+// wait 10s to exercise escalation (Config.StopGrace / envStopGrace).
+const defaultStopGrace = 10 * time.Second
+
+// outerBackstopBuffer is added on top of the configured StopGrace to get
+// the launcher's own outer escalation deadline against glider-init itself
+// (see launcher.go's waitOrStop doc comment). It must be strictly greater
+// than zero so that, under normal operation, glider-init's own internal
+// escalation always has a chance to complete first — the launcher's
+// backstop exists only to bound a hung/buggy glider-init, not to race it.
+const outerBackstopBuffer = 5 * time.Second
+
+// Config describes a single Phase 2 container launch, corresponding
 // directly to `glider-runtime run --rootfs <path> -- <cmd> [args...]`
 // (runtime.md §6).
 type Config struct {
 	// RootFS is a pre-existing directory to use as the container's root
-	// filesystem. Phase 1 does no image handling or OverlayFS (Phase 5-7)
+	// filesystem. Phase 1/2 do no image handling or OverlayFS (Phase 5-7)
 	// — the caller is responsible for its contents.
 	RootFS string
 
-	// Argv is the workload command and arguments, executed as PID 1 inside
-	// the container's namespaces (runtime.md §1, §5).
+	// Argv is the workload command and arguments, executed as a supervised
+	// child of glider-init (PID 2+ inside the container's namespaces;
+	// docs/adr/0006-glider-init-pid1-supervisor.md).
 	Argv []string
 
 	// Hostname is set via sethostname(2) inside the container's UTS
@@ -61,6 +89,11 @@ type Config struct {
 	// lets error messages and the state file agree on an identity from the
 	// very first CREATING write.
 	ContainerID string
+
+	// StopGrace overrides defaultStopGrace when nonzero. Exposed on Config
+	// (rather than only as an env var) so Go-level callers (tests) can set
+	// it directly without shelling out.
+	StopGrace time.Duration
 }
 
 const defaultStateDir = "/var/lib/glider/containers"
@@ -70,4 +103,11 @@ func (c Config) stateDir() string {
 		return c.StateDir
 	}
 	return defaultStateDir
+}
+
+func (c Config) stopGrace() time.Duration {
+	if c.StopGrace > 0 {
+		return c.StopGrace
+	}
+	return defaultStopGrace
 }

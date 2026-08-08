@@ -1,6 +1,10 @@
 # Failure model
 
-Status: Phase 0 design, binding across all phases.
+Status: Phase 0 design, binding across all phases. The "`gliderd` crash"
+row below is implemented ahead of `gliderd` itself (Phase 10) by Phase 2's
+`process.Recover` (runtime.md §8.6, container-lifecycle.md §4) — invoked
+explicitly today (no daemon/reconciler exists yet to run it
+automatically), but the recovery *logic* it names is real, not aspirational.
 Related: [architecture/overview.md](../architecture/overview.md) §5.4
 (generations and fencing), [container-lifecycle.md](container-lifecycle.md) §4.
 

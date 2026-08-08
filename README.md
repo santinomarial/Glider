@@ -8,9 +8,12 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **Phase 0 — architecture and contracts.** No runtime code exists yet.
-See [docs/architecture/overview.md](docs/architecture/overview.md) for the
-end-to-end design and the phase plan.
+Status: **Phase 2 — container lifecycle, PID 1 supervision, and crash
+recovery**, on top of Phase 1's real Linux namespace runtime. See
+[docs/architecture/overview.md](docs/architecture/overview.md) for the
+end-to-end design and the phase plan, and
+[docs/adr/0006-glider-init-pid1-supervisor.md](docs/adr/0006-glider-init-pid1-supervisor.md)
+for the current runtime architecture.
 
 ## Documentation map
 
