@@ -86,6 +86,7 @@ func main() {
 		}
 		serverOptions = append(serverOptions, grpc.Creds(credentials), grpc.UnaryInterceptor(transport.UnaryAuthorizationInterceptor()))
 	}
+	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(1<<20), grpc.MaxSendMsgSize(4<<20), grpc.MaxConcurrentStreams(256))
 	server := grpc.NewServer(serverOptions...)
 	controlplane.Register(server, service)
 	workloads, err := workloadcontroller.New(store)

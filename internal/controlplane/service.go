@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/santinomarial/glider/internal/admission"
 	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/scheduler"
 	storeapi "github.com/santinomarial/glider/internal/store"
@@ -42,12 +43,18 @@ func (s *Service) PutTask(ctx context.Context, in *structpb.Struct) (*structpb.S
 	if err := decode(in, &task); err != nil {
 		return nil, invalid(err)
 	}
+	if err := admission.Task(task); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutTask(ctx, task, task.Metadata.Revision)
 	return encode(saved, mapError(err))
 }
 func (s *Service) PutNode(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var node api.Node
 	if err := decode(in, &node); err != nil {
+		return nil, invalid(err)
+	}
+	if err := admission.Node(node); err != nil {
 		return nil, invalid(err)
 	}
 	saved, err := s.store.PutNode(ctx, node, node.Metadata.Revision)
@@ -78,6 +85,9 @@ func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*struct
 	if err := decode(in, &workload); err != nil {
 		return nil, invalid(err)
 	}
+	if err := admission.Workload(workload); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutWorkload(ctx, workload, workload.Metadata.Revision)
 	return encode(saved, mapError(err))
 }
@@ -90,6 +100,9 @@ func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structp
 	if err := decode(in, &service); err != nil {
 		return nil, invalid(err)
 	}
+	if err := admission.Service(service); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
 	return encode(saved, mapError(err))
 }
@@ -100,6 +113,9 @@ func (s *Service) ListServices(ctx context.Context, _ *structpb.Struct) (*struct
 func (s *Service) PutEvent(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var event api.Event
 	if err := decode(in, &event); err != nil {
+		return nil, invalid(err)
+	}
+	if err := admission.Event(event); err != nil {
 		return nil, invalid(err)
 	}
 	saved, err := s.store.PutEvent(ctx, event)
