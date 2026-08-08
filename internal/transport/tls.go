@@ -18,6 +18,13 @@ import (
 )
 
 func ServerCredentials(certFile, keyFile, clientCAFile string) (credentials.TransportCredentials, error) {
+	config, err := ServerTLSConfig(certFile, keyFile, clientCAFile)
+	if err != nil {
+		return nil, err
+	}
+	return credentials.NewTLS(config), nil
+}
+func ServerTLSConfig(certFile, keyFile, clientCAFile string) (*tls.Config, error) {
 	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load server certificate: %w", err)
@@ -26,7 +33,7 @@ func ServerCredentials(certFile, keyFile, clientCAFile string) (credentials.Tran
 	if err != nil {
 		return nil, fmt.Errorf("load client CA: %w", err)
 	}
-	return credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{certificate}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert, MinVersion: tls.VersionTLS13}), nil
+	return &tls.Config{Certificates: []tls.Certificate{certificate}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert, MinVersion: tls.VersionTLS13}, nil
 }
 func ClientCredentials(certFile, keyFile, caFile, serverName string) (credentials.TransportCredentials, error) {
 	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -41,6 +48,20 @@ func ClientCredentials(certFile, keyFile, caFile, serverName string) (credential
 		return nil, errors.New("TLS server name is required")
 	}
 	return credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{certificate}, RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS13}), nil
+}
+func EtcdTLSConfig(certFile, keyFile, caFile, serverName string) (*tls.Config, error) {
+	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load etcd client certificate: %w", err)
+	}
+	pool, err := loadPool(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("load etcd CA: %w", err)
+	}
+	if strings.TrimSpace(serverName) == "" {
+		return nil, errors.New("etcd TLS server name is required")
+	}
+	return &tls.Config{Certificates: []tls.Certificate{certificate}, RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS13}, nil
 }
 func loadPool(file string) (*x509.CertPool, error) {
 	data, err := os.ReadFile(file)

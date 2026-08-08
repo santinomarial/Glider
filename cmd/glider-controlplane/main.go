@@ -38,10 +38,25 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "server TLS private key")
 	clientCA := flag.String("client-ca", "", "CA used to authenticate client certificates")
 	insecureDevelopment := flag.Bool("insecure-development", false, "disable TLS and authentication (development only)")
+	etcdTLSCert := flag.String("etcd-tls-cert", "", "etcd client TLS certificate")
+	etcdTLSKey := flag.String("etcd-tls-key", "", "etcd client TLS private key")
+	etcdCA := flag.String("etcd-ca", "", "etcd server CA certificate")
+	etcdServerName := flag.String("etcd-tls-server-name", "", "expected etcd certificate name")
+	insecureEtcd := flag.Bool("insecure-etcd", false, "disable etcd TLS (development only)")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	client, err := clientv3.New(clientv3.Config{Endpoints: split(*endpoints), DialTimeout: 5 * time.Second})
+	var err error
+	etcdConfig := clientv3.Config{Endpoints: split(*endpoints), DialTimeout: 5 * time.Second}
+	if !*insecureEtcd {
+		etcdConfig.TLS, err = transport.EtcdTLSConfig(*etcdTLSCert, *etcdTLSKey, *etcdCA, *etcdServerName)
+		if err != nil {
+			fatal(err)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "glider-controlplane: WARNING: etcd TLS disabled")
+	}
+	client, err := clientv3.New(etcdConfig)
 	if err != nil {
 		fatal(err)
 	}
@@ -88,7 +103,11 @@ func main() {
 	go func() { _ = workloads.Run(ctx, 2*time.Second) }()
 	go func() { _ = services.Run(ctx, 2*time.Second) }()
 	if *metricsListen != "" {
-		metrics := &http.Server{Addr: *metricsListen, Handler: observability.NewMetricsHandler(store), ReadHeaderTimeout: 5 * time.Second}
+		metricsTLS, err := transport.ServerTLSConfig(*tlsCert, *tlsKey, *clientCA)
+		if err != nil && !*insecureDevelopment {
+			fatal(err)
+		}
+		metrics := &http.Server{Addr: *metricsListen, Handler: observability.NewMetricsHandler(store), ReadHeaderTimeout: 5 * time.Second, TLSConfig: metricsTLS}
 		go func() {
 			<-ctx.Done()
 			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -96,7 +115,13 @@ func main() {
 			_ = metrics.Shutdown(shutdown)
 		}()
 		go func() {
-			if err := metrics.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			var err error
+			if *insecureDevelopment {
+				err = metrics.ListenAndServe()
+			} else {
+				err = metrics.ListenAndServeTLS("", "")
+			}
+			if err != nil && err != http.ErrServerClosed {
 				fatal(err)
 			}
 		}()

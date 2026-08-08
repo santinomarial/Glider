@@ -18,5 +18,13 @@ values assign roles:
 
 Authorization is deny-by-default. A verified certificate without a recognized
 role is authenticated but cannot call any method. Certificate issuance and
-rotation tooling, etcd TLS, node operational transport, and metrics TLS remain
-separate production gates and are not implied by this first boundary.
+rotation tooling and node operational transport remain separate production
+gates. Both `glider-controlplane` and `gliderd` require certificate-authenticated
+TLS to etcd unless the explicit `--insecure-etcd` development switch is used.
+The metrics listener reuses the control-plane server identity and requires a
+client certificate; operators should issue a narrowly scoped monitoring
+identity and restrict the listener at the network layer.
+
+Cluster DNS is authoritative UDP within the pod/control network. It is not an
+Internet-facing resolver, does not recurse, and must be isolated by host
+firewall or network policy. DNSSEC is not a substitute for that boundary.

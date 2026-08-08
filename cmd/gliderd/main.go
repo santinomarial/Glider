@@ -20,6 +20,7 @@ import (
 	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/lease"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
+	"github.com/santinomarial/glider/internal/transport"
 )
 
 func main() {
@@ -28,6 +29,8 @@ func main() {
 	var resync time.Duration
 	var leaseTTL, selfFence time.Duration
 	var insecure bool
+	var etcdTLSCert, etcdTLSKey, etcdCA, etcdServerName string
+	var insecureEtcd bool
 	flag.StringVar(&endpoints, "etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	flag.StringVar(&nodeID, "node-id", "", "this node's stable ID (required)")
 	flag.StringVar(&clusterID, "cluster-id", "default", "Glider cluster ID")
@@ -37,6 +40,11 @@ func main() {
 	flag.DurationVar(&leaseTTL, "lease-ttl", 10*time.Second, "node lease TTL")
 	flag.DurationVar(&selfFence, "self-fence-after", 25*time.Second, "maximum unproven lease duration before stopping workloads")
 	flag.BoolVar(&insecure, "insecure-registry", false, "allow development registries over HTTP")
+	flag.StringVar(&etcdTLSCert, "etcd-tls-cert", "", "etcd client TLS certificate")
+	flag.StringVar(&etcdTLSKey, "etcd-tls-key", "", "etcd client TLS private key")
+	flag.StringVar(&etcdCA, "etcd-ca", "", "etcd server CA certificate")
+	flag.StringVar(&etcdServerName, "etcd-tls-server-name", "", "expected etcd certificate name")
+	flag.BoolVar(&insecureEtcd, "insecure-etcd", false, "disable etcd TLS (development only)")
 	flag.Parse()
 	if nodeID == "" {
 		fmt.Fprintln(os.Stderr, "gliderd: --node-id is required")
@@ -44,7 +52,17 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	client, err := clientv3.New(clientv3.Config{Endpoints: split(endpoints), DialTimeout: 5 * time.Second})
+	etcdConfig := clientv3.Config{Endpoints: split(endpoints), DialTimeout: 5 * time.Second}
+	var err error
+	if !insecureEtcd {
+		etcdConfig.TLS, err = transport.EtcdTLSConfig(etcdTLSCert, etcdTLSKey, etcdCA, etcdServerName)
+		if err != nil {
+			fatal(err)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "gliderd: WARNING: etcd TLS disabled")
+	}
+	client, err := clientv3.New(etcdConfig)
 	if err != nil {
 		fatal(err)
 	}
