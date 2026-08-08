@@ -50,14 +50,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 		desired, err := d.source.Snapshot(ctx, d.nodeID)
 		if err != nil {
 			select {
-			case <-ctx.Done(): return ctx.Err()
-			case <-time.After(time.Second): continue
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+				continue
 			}
 		}
 		if err := d.reconciler.Reconcile(ctx, desired); err != nil {
 			select {
-			case <-ctx.Done(): return ctx.Err()
-			case <-time.After(time.Second): continue
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+				continue
 			}
 		}
 		select {
