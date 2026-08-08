@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -24,6 +25,7 @@ import (
 	"github.com/santinomarial/glider/internal/observability"
 	"github.com/santinomarial/glider/internal/scheduler"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
+	"github.com/santinomarial/glider/internal/transport"
 )
 
 func main() {
@@ -32,6 +34,10 @@ func main() {
 	clusterID := flag.String("cluster-id", "default", "Glider cluster ID")
 	dnsListen := flag.String("dns-listen", "", "optional authoritative cluster DNS UDP address (for example :53)")
 	metricsListen := flag.String("metrics-listen", "127.0.0.1:9090", "Prometheus metrics listen address; empty disables")
+	tlsCert := flag.String("tls-cert", "", "server TLS certificate")
+	tlsKey := flag.String("tls-key", "", "server TLS private key")
+	clientCA := flag.String("client-ca", "", "CA used to authenticate client certificates")
+	insecureDevelopment := flag.Bool("insecure-development", false, "disable TLS and authentication (development only)")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -52,7 +58,20 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	server := grpc.NewServer()
+	var serverOptions []grpc.ServerOption
+	if *insecureDevelopment {
+		fmt.Fprintln(os.Stderr, "glider-controlplane: WARNING: TLS and authorization disabled")
+	} else {
+		if *tlsCert == "" || *tlsKey == "" || *clientCA == "" {
+			fatal(errors.New("--tls-cert, --tls-key, and --client-ca are required unless --insecure-development is set"))
+		}
+		credentials, err := transport.ServerCredentials(*tlsCert, *tlsKey, *clientCA)
+		if err != nil {
+			fatal(err)
+		}
+		serverOptions = append(serverOptions, grpc.Creds(credentials), grpc.UnaryInterceptor(transport.UnaryAuthorizationInterceptor()))
+	}
+	server := grpc.NewServer(serverOptions...)
 	controlplane.Register(server, service)
 	workloads, err := workloadcontroller.New(store)
 	if err != nil {

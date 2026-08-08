@@ -47,6 +47,9 @@ See [docs/testing/performance.md](docs/testing/performance.md) for Phase 23.
 See [docs/release/v0.1.0.md](docs/release/v0.1.0.md) for Phase 24 and release gates.
 Production release blockers and their objective exit gates are tracked in
 [docs/release/production-readiness.md](docs/release/production-readiness.md).
+The first hardening milestone adds mandatory control-plane mTLS and
+certificate-role authorization; see
+[docs/design/control-plane-security.md](docs/design/control-plane-security.md).
 
 Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
 run of the full unit + integration test suite (re-execs itself inside a

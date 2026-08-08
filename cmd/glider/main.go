@@ -7,7 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"github.com/santinomarial/glider/internal/api"
+	"github.com/santinomarial/glider/internal/transport"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/structpb"
 	"os"
@@ -40,11 +42,26 @@ func (c client) call(ctx context.Context, method string, input any) (map[string]
 func main() {
 	endpoint := flag.String("endpoint", env("GLIDER_ENDPOINT", "127.0.0.1:8443"), "control-plane address")
 	timeout := flag.Duration("timeout", 15*time.Second, "request timeout")
+	tlsCert := flag.String("tls-cert", env("GLIDER_TLS_CERT", ""), "client TLS certificate")
+	tlsKey := flag.String("tls-key", env("GLIDER_TLS_KEY", ""), "client TLS private key")
+	caFile := flag.String("ca", env("GLIDER_CA", ""), "control-plane CA certificate")
+	serverName := flag.String("tls-server-name", env("GLIDER_TLS_SERVER_NAME", ""), "expected control-plane certificate name")
+	insecureDevelopment := flag.Bool("insecure-development", false, "disable TLS verification (development only)")
 	flag.Parse()
 	if flag.NArg() == 0 {
 		usage()
 	}
-	conn, err := grpc.NewClient(*endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	var transportCredentials credentials.TransportCredentials
+	var err error
+	if *insecureDevelopment {
+		transportCredentials = insecure.NewCredentials()
+	} else {
+		transportCredentials, err = transport.ClientCredentials(*tlsCert, *tlsKey, *caFile, *serverName)
+		if err != nil {
+			fatal(err)
+		}
+	}
+	conn, err := grpc.NewClient(*endpoint, grpc.WithTransportCredentials(transportCredentials))
 	if err != nil {
 		fatal(err)
 	}
