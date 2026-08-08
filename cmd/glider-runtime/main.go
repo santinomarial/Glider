@@ -17,13 +17,16 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	imagemanager "github.com/santinomarial/glider/internal/image/manager"
 	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/process"
 )
@@ -72,13 +75,16 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider-runtime run --rootfs <path> [--hostname <name>] [--cpus <n>] [--memory <size>] [--pids <n>] -- <cmd> [args...]")
+	fmt.Fprintln(os.Stderr, "usage: glider-runtime run (--rootfs <path> | --image <reference>) [--hostname <name>] [--cpus <n>] [--memory <size>] [--pids <n>] -- [cmd [args...]]")
 	fmt.Fprintln(os.Stderr, "       glider-runtime recover --state-dir <dir> <container-id>")
 }
 
 func runCmd(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	rootfs := fs.String("rootfs", "", "path to a pre-existing root filesystem directory (required)")
+	imageRef := fs.String("image", "", "OCI image reference to pull, unpack, and run")
+	dataDir := fs.String("data-dir", "/var/lib/glider", "Glider image/content/snapshot data root")
+	insecureRegistry := fs.Bool("insecure-registry", false, "use plain HTTP for a development registry (never for production registries)")
 	hostname := fs.String("hostname", "glider", "hostname to set inside the container's UTS namespace")
 	stateDir := fs.String("state-dir", "", "override the default state directory (/var/lib/glider/containers); primarily for tests")
 	stopGrace := fs.Duration("stop-grace", 0, "grace period between forwarding SIGTERM and escalating to SIGKILL (default 10s if unset or zero)")
@@ -90,12 +96,12 @@ func runCmd(args []string) int {
 	}
 
 	argv := fs.Args()
-	if *rootfs == "" {
+	if (*rootfs == "") == (*imageRef == "") {
 		usage()
-		fmt.Fprintln(os.Stderr, "glider-runtime: --rootfs is required")
+		fmt.Fprintln(os.Stderr, "glider-runtime: exactly one of --rootfs or --image is required")
 		return 2
 	}
-	if len(argv) == 0 {
+	if *rootfs != "" && len(argv) == 0 {
 		usage()
 		fmt.Fprintln(os.Stderr, "glider-runtime: no workload command specified after --")
 		return 2
@@ -133,6 +139,22 @@ func runCmd(args []string) int {
 		return 1
 	}
 
+	var imageManager *imagemanager.Manager
+	var imageEnv []string
+	var workingDir string
+	if *imageRef != "" {
+		imageManager, err = imagemanager.New(*dataDir, http.DefaultClient, nil, *insecureRegistry)
+		if err != nil { fmt.Fprintln(os.Stderr, "glider-runtime: initialize image manager:", err); return 1 }
+		prepared, err := imageManager.Prepare(context.Background(), *imageRef, id)
+		if err != nil { fmt.Fprintln(os.Stderr, "glider-runtime: prepare image:", err); return 1 }
+		defer func(){ if err:=imageManager.Remove(id);err!=nil{fmt.Fprintln(os.Stderr,"glider-runtime: remove image snapshot:",err)} }()
+		*rootfs = prepared.RootFS
+		imageEnv = append([]string(nil), prepared.Image.Config.Env...)
+		workingDir = prepared.Image.Config.WorkingDir
+		if len(argv) == 0 { argv = append(append([]string(nil), prepared.Image.Config.Entrypoint...), prepared.Image.Config.Cmd...) }
+		if len(argv) == 0 { fmt.Fprintln(os.Stderr,"glider-runtime: image has no Entrypoint/Cmd and no command was supplied");return 2 }
+	}
+
 	cfg := process.Config{
 		RootFS:      *rootfs,
 		Argv:        argv,
@@ -141,6 +163,8 @@ func runCmd(args []string) int {
 		ContainerID: id,
 		StopGrace:   *stopGrace,
 		Resources:   resources,
+		Env:         imageEnv,
+		WorkingDir:  workingDir,
 	}
 
 	// SIGTERM/SIGINT delivered to glider-runtime itself (e.g. an operator
