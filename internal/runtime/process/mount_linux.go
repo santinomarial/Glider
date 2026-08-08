@@ -53,6 +53,33 @@ func setupRootMounts(root string) error {
 	if err := mountDevShm(root); err != nil {
 		return err
 	}
+	if err := mountRuntimeSelf(root); err != nil {
+		return err
+	}
+	return nil
+}
+
+const workloadRuntimePath = "/dev/.glider-runtime"
+
+// mountRuntimeSelf places a read-only bind of the current executable on the
+// container-private /dev tmpfs. After pivot_root, the original host path
+// behind /proc/self/exe is unreachable, but the security trampoline still
+// needs one controlled re-exec before it execs the workload.
+func mountRuntimeSelf(root string) error {
+	target := filepath.Join(root, workloadRuntimePath)
+	f, err := os.OpenFile(target, os.O_CREATE|os.O_RDONLY, 0o500)
+	if err != nil {
+		return fmt.Errorf("create runtime trampoline mountpoint: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := syscall.Mount("/proc/self/exe", target, "", syscall.MS_BIND, ""); err != nil {
+		return fmt.Errorf("bind runtime trampoline: %w", err)
+	}
+	if err := syscall.Mount("", target, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
+		return fmt.Errorf("secure runtime trampoline mount: %w", err)
+	}
 	return nil
 }
 

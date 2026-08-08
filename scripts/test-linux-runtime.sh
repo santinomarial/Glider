@@ -27,10 +27,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ "$(uname -s)" != "Linux" ]; then
 	echo "==> Not running on Linux ($(uname -s)) — re-executing inside a privileged ${DOCKER_IMAGE} container"
 	exec docker run --rm --privileged \
-		-v "${REPO_ROOT}:/work" -w /work \
+		-v "${REPO_ROOT}:/source:ro" --mount type=volume,dst=/work -w /work \
 		-e GLIDER_TEST_STRESS \
 		"${DOCKER_IMAGE}" \
-		bash scripts/test-linux-runtime.sh "$@"
+		bash -c 'tar --exclude=./work -C /source -cf - . | tar -C /work -xf - && exec bash scripts/test-linux-runtime.sh "$@"' bash "$@"
 fi
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -87,8 +87,19 @@ echo
 
 cd "${REPO_ROOT}"
 
+# Go's t.TempDir follows TMPDIR. Under Docker Desktop, /tmp is part of the
+# container's overlay root; using it as the backing store for Glider's own
+# OverlayFS snapshots creates an unsupported overlay-on-overlay mount. Keep all
+# test temporaries on the Linux-native work volume/filesystem instead.
+export TMPDIR="${REPO_ROOT}/work/test-tmp"
+mkdir -p "${TMPDIR}"
+
 echo "== gofmt =="
-UNFORMATTED="$(gofmt -l .)"
+# `work/` contains the locally cached Go distribution and module/build caches.
+# The Go distribution intentionally includes syntactically invalid parser test
+# fixtures, so scanning the entire repository makes this check fail before it
+# reaches Glider. Restrict formatting verification to project source.
+UNFORMATTED="$(find . -path './work' -prune -o -type f -name '*.go' -print0 | xargs -0 gofmt -l)"
 if [ -n "${UNFORMATTED}" ]; then
 	echo "not gofmt-clean:" >&2
 	echo "${UNFORMATTED}" >&2

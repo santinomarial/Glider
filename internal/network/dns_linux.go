@@ -41,14 +41,18 @@ func ConfigureDNS(rootfs string, servers []netip.Addr) error {
 	if rootfs == "" || len(servers) == 0 {
 		return errors.New("rootfs and DNS servers are required")
 	}
-	rootFD, err := unix.Open(rootfs, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	rootFD, err := unix.Open(rootfs, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return err
 	}
 	defer unix.Close(rootFD)
+	if err := unix.Flock(rootFD, unix.LOCK_EX); err != nil {
+		return fmt.Errorf("lock rootfs DNS configuration: %w", err)
+	}
+	defer unix.Flock(rootFD, unix.LOCK_UN)
 	etcFD, err := unix.Openat(rootFD, "etc", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if errors.Is(err, unix.ENOENT) {
-		if err := unix.Mkdirat(rootFD, "etc", 0o755); err != nil {
+		if err := unix.Mkdirat(rootFD, "etc", 0o755); err != nil && !errors.Is(err, unix.EEXIST) {
 			return err
 		}
 		etcFD, err = unix.Openat(rootFD, "etc", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)

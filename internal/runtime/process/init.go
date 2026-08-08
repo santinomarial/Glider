@@ -251,8 +251,8 @@ func runSupervisor(path string, argv []string, resultW *os.File, cfg supervisorC
 		fail(resultW, fmt.Errorf("create workload exec-status pipe: %w", err))
 	}
 	cmd := &exec.Cmd{
-		Path:   "/proc/self/exe",
-		Args:   append([]string{"/proc/self/exe", ReexecWorkloadArg, path}, argv...),
+		Path:   workloadRuntimePath,
+		Args:   append([]string{workloadRuntimePath, ReexecWorkloadArg, path}, argv...),
 		Env:    workloadEnvironment(),
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
