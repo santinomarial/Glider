@@ -7,11 +7,11 @@ import (
 
 func TestParseNormalizesSupportedReferences(t *testing.T) {
 	cases := map[string]string{
-		"alpine":                                      "registry-1.docker.io/library/alpine:latest",
-		"alpine:3.21":                                 "registry-1.docker.io/library/alpine:3.21",
-		"example/api":                                 "registry-1.docker.io/example/api:latest",
-		"ghcr.io/example/api:v17":                     "ghcr.io/example/api:v17",
-		"localhost:5000/team/app:test":                "localhost:5000/team/app:test",
+		"alpine":                       "registry-1.docker.io/library/alpine:latest",
+		"alpine:3.21":                  "registry-1.docker.io/library/alpine:3.21",
+		"example/api":                  "registry-1.docker.io/example/api:latest",
+		"ghcr.io/example/api:v17":      "ghcr.io/example/api:v17",
+		"localhost:5000/team/app:test": "localhost:5000/team/app:test",
 		"repo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "registry-1.docker.io/library/repo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}
 	for input, want := range cases {

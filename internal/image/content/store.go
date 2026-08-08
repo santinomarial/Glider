@@ -5,6 +5,7 @@ package content
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -95,7 +96,7 @@ func (s *Store) Put(ctx context.Context, desc v1.Descriptor, src io.Reader) (str
 		tmp.Close()
 		return "", fmt.Errorf("%w: blob %s: got %d, want %d", ErrSizeMismatch, desc.Digest, written, desc.Size)
 	}
-	got := digest.NewDigestFromBytes(digest.SHA256, h.Sum(nil))
+	got := digest.NewDigestFromEncoded(digest.SHA256, hex.EncodeToString(h.Sum(nil)))
 	if got != desc.Digest {
 		tmp.Close()
 		return "", fmt.Errorf("%w: got %s, want %s", ErrDigestMismatch, got, desc.Digest)
@@ -146,7 +147,7 @@ func verifyFile(path string, desc v1.Descriptor) error {
 	if _, err := io.Copy(h, f); err != nil {
 		return fmt.Errorf("hash stored blob: %w", err)
 	}
-	got := digest.NewDigestFromBytes(digest.SHA256, h.Sum(nil))
+	got := digest.NewDigestFromEncoded(digest.SHA256, hex.EncodeToString(h.Sum(nil)))
 	if got != desc.Digest {
 		return fmt.Errorf("%w: blob %s hashes to %s", ErrCorruptContent, desc.Digest, got)
 	}

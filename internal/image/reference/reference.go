@@ -44,7 +44,7 @@ func Parse(input string) (Reference, error) {
 		}
 		name = input[:at]
 		d, err := digest.Parse(input[at+1:])
-		if err != nil || d.Algorithm() != digest.SHA256 || !d.Validate() {
+		if err != nil || d.Algorithm() != digest.SHA256 || d.Validate() != nil {
 			return ref, fmt.Errorf("%w: unsupported or malformed digest in %q", ErrInvalid, input)
 		}
 		ref.Digest = d

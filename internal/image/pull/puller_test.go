@@ -34,26 +34,44 @@ func TestPullOCIManifestStoresConfigAndLayers(t *testing.T) {
 			w.Header().Set("Docker-Content-Digest", manifestDigest.String())
 			_, _ = w.Write(manifest)
 		case "/v2/team/app/blobs/" + configDesc.Digest.String():
-			blobRequests.Add(1); w.Header().Set("Content-Length", fmt.Sprint(len(config))); _, _ = w.Write(config)
+			blobRequests.Add(1)
+			w.Header().Set("Content-Length", fmt.Sprint(len(config)))
+			_, _ = w.Write(config)
 		case "/v2/team/app/blobs/" + layerDesc.Digest.String():
-			blobRequests.Add(1); w.Header().Set("Content-Length", fmt.Sprint(len(layer))); _, _ = w.Write(layer)
+			blobRequests.Add(1)
+			w.Header().Set("Content-Length", fmt.Sprint(len(layer)))
+			_, _ = w.Write(layer)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 	store, err := content.NewStore(t.TempDir())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	puller, _ := New(registry.NewClient(server.Client(), nil, true), store)
 	input := strings.TrimPrefix(server.URL, "http://") + "/team/app:v1"
 	result, err := puller.Pull(context.Background(), input)
-	if err != nil { t.Fatal(err) }
-	if result.Manifest.Digest != manifestDigest || result.Image.Config.WorkingDir != "/srv" || result.Image.Config.Entrypoint[0] != "/bin/app" { t.Fatalf("unexpected result: %#v", result) }
-	if err := store.Verify(configDesc); err != nil { t.Fatal(err) }
-	if err := store.Verify(layerDesc); err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Manifest.Digest != manifestDigest || result.Image.Config.WorkingDir != "/srv" || result.Image.Config.Entrypoint[0] != "/bin/app" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if err := store.Verify(configDesc); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Verify(layerDesc); err != nil {
+		t.Fatal(err)
+	}
 
-	if _, err := puller.Pull(context.Background(), input); err != nil { t.Fatal(err) }
-	if got := blobRequests.Load(); got != 2 { t.Fatalf("cached pull made extra blob requests: total %d, want 2", got) }
+	if _, err := puller.Pull(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
+	if got := blobRequests.Load(); got != 2 {
+		t.Fatalf("cached pull made extra blob requests: total %d, want 2", got)
+	}
 }
 
 func TestPullSelectsLinuxAMD64FromIndex(t *testing.T) {
@@ -70,19 +88,41 @@ func TestPullSelectsLinuxAMD64FromIndex(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v2/repo/app/manifests/latest": w.Header().Set("Content-Type", v1.MediaTypeImageIndex); w.Header().Set("Docker-Content-Digest", indexDigest.String()); _, _ = w.Write(index)
-		case "/v2/repo/app/manifests/" + manifestDesc.Digest.String(): w.Header().Set("Content-Type", v1.MediaTypeImageManifest); w.Header().Set("Docker-Content-Digest", manifestDesc.Digest.String()); _, _ = w.Write(manifest)
-		case "/v2/repo/app/blobs/" + configDesc.Digest.String(): w.Header().Set("Content-Length", fmt.Sprint(len(config))); _, _ = w.Write(config)
-		default: http.NotFound(w, r)
+		case "/v2/repo/app/manifests/latest":
+			w.Header().Set("Content-Type", v1.MediaTypeImageIndex)
+			w.Header().Set("Docker-Content-Digest", indexDigest.String())
+			_, _ = w.Write(index)
+		case "/v2/repo/app/manifests/" + manifestDesc.Digest.String():
+			w.Header().Set("Content-Type", v1.MediaTypeImageManifest)
+			w.Header().Set("Docker-Content-Digest", manifestDesc.Digest.String())
+			_, _ = w.Write(manifest)
+		case "/v2/repo/app/blobs/" + configDesc.Digest.String():
+			w.Header().Set("Content-Length", fmt.Sprint(len(config)))
+			_, _ = w.Write(config)
+		default:
+			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 	store, _ := content.NewStore(t.TempDir())
 	puller, _ := New(registry.NewClient(server.Client(), nil, true), store)
 	result, err := puller.Pull(context.Background(), strings.TrimPrefix(server.URL, "http://")+"/repo/app")
-	if err != nil { t.Fatal(err) }
-	if result.Manifest.Digest != manifestDesc.Digest { t.Fatalf("selected %s, want %s", result.Manifest.Digest, manifestDesc.Digest) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Manifest.Digest != manifestDesc.Digest {
+		t.Fatalf("selected %s, want %s", result.Manifest.Digest, manifestDesc.Digest)
+	}
 }
 
-func descriptor(data []byte, mediaType string) v1.Descriptor { return v1.Descriptor{MediaType: mediaType, Digest: digest.FromBytes(data), Size: int64(len(data))} }
-func mustJSON(t *testing.T, value any) []byte { t.Helper(); data, err := json.Marshal(value); if err != nil { t.Fatal(err) }; return data }
+func descriptor(data []byte, mediaType string) v1.Descriptor {
+	return v1.Descriptor{MediaType: mediaType, Digest: digest.FromBytes(data), Size: int64(len(data))}
+}
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}

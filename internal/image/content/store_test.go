@@ -19,15 +19,21 @@ func descriptor(data []byte) v1.Descriptor {
 
 func TestPutPublishesVerifiedBlob(t *testing.T) {
 	store, err := NewStore(t.TempDir())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	data := []byte("verified content")
 	desc := descriptor(data)
 	path, err := store.Put(context.Background(), desc, bytes.NewReader(data))
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if want := filepath.Join("blobs", "sha256", desc.Digest.Encoded()); filepath.ToSlash(path[len(store.root)+1:]) != want {
 		t.Fatalf("path = %q, want suffix %q", path, want)
 	}
-	if err := store.Verify(desc); err != nil { t.Fatalf("Verify: %v", err) }
+	if err := store.Verify(desc); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
 }
 
 func TestPutRejectsDigestAndSizeMismatchWithoutPublishing(t *testing.T) {
@@ -37,7 +43,9 @@ func TestPutRejectsDigestAndSizeMismatchWithoutPublishing(t *testing.T) {
 		t.Fatalf("digest mismatch error = %v", err)
 	}
 	path, _ := store.BlobPath(desc.Digest)
-	if _, err := os.Stat(path); !os.IsNotExist(err) { t.Fatalf("failed blob was published: %v", err) }
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("failed blob was published: %v", err)
+	}
 
 	short := desc
 	short.Size++
@@ -63,8 +71,14 @@ func TestPutConcurrentSameDigestConverges(t *testing.T) {
 	}
 	wg.Wait()
 	close(errs)
-	for err := range errs { if err != nil { t.Errorf("Put: %v", err) } }
-	if err := store.Verify(desc); err != nil { t.Fatal(err) }
+	for err := range errs {
+		if err != nil {
+			t.Errorf("Put: %v", err)
+		}
+	}
+	if err := store.Verify(desc); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPutRepairsCorruptExistingBlob(t *testing.T) {
@@ -72,7 +86,13 @@ func TestPutRepairsCorruptExistingBlob(t *testing.T) {
 	data := []byte("good")
 	desc := descriptor(data)
 	path, _ := store.BlobPath(desc.Digest)
-	if err := os.WriteFile(path, []byte("evil"), 0o644); err != nil { t.Fatal(err) }
-	if _, err := store.Put(context.Background(), desc, bytes.NewReader(data)); err != nil { t.Fatal(err) }
-	if err := store.Verify(desc); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(path, []byte("evil"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(context.Background(), desc, bytes.NewReader(data)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Verify(desc); err != nil {
+		t.Fatal(err)
+	}
 }
