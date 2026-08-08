@@ -61,7 +61,28 @@ func TestEtcdConcurrentBindHasOneWinner(t *testing.T) {
 	}
 }
 
-func TestDeleteAssignedTaskAtomicallyReleasesReservation(t *testing.T){client:=startEtcd(t);s,_:=New(client,"delete-cluster");ctx:=context.Background();task,_:=s.PutTask(ctx,api.Task{Metadata:api.Metadata{ID:"task"},Spec:api.TaskSpec{Resources:api.Resources{CPUMilli:400}},Status:api.TaskStatus{Phase:api.TaskPending}},0);node,_:=s.PutNode(ctx,readyNode("node"),0);_,err:=s.Bind(ctx,storeapi.BindRequest{TaskID:"task",TaskRevision:task.Metadata.Revision,NodeID:"node",NodeRevision:node.Metadata.Revision});if err!=nil{t.Fatal(err)};stored,_:=s.GetTask(ctx,"task");if err:=s.DeleteTask(ctx,"task",stored.Metadata.Revision);err!=nil{t.Fatal(err)};nodes,_:=s.ListNodes(ctx);if nodes[0].Status.Reserved.CPUMilli!=0{t.Fatalf("reservation=%d",nodes[0].Status.Reserved.CPUMilli)};if assignments,_:=s.ListAssignments(ctx);len(assignments)!=0{t.Fatalf("assignments=%d",len(assignments))}}
+func TestDeleteAssignedTaskAtomicallyReleasesReservation(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "delete-cluster")
+	ctx := context.Background()
+	task, _ := s.PutTask(ctx, api.Task{Metadata: api.Metadata{ID: "task"}, Spec: api.TaskSpec{Resources: api.Resources{CPUMilli: 400}}, Status: api.TaskStatus{Phase: api.TaskPending}}, 0)
+	node, _ := s.PutNode(ctx, readyNode("node"), 0)
+	_, err := s.Bind(ctx, storeapi.BindRequest{TaskID: "task", TaskRevision: task.Metadata.Revision, NodeID: "node", NodeRevision: node.Metadata.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.GetTask(ctx, "task")
+	if err := s.DeleteTask(ctx, "task", stored.Metadata.Revision); err != nil {
+		t.Fatal(err)
+	}
+	nodes, _ := s.ListNodes(ctx)
+	if nodes[0].Status.Reserved.CPUMilli != 0 {
+		t.Fatalf("reservation=%d", nodes[0].Status.Reserved.CPUMilli)
+	}
+	if assignments, _ := s.ListAssignments(ctx); len(assignments) != 0 {
+		t.Fatalf("assignments=%d", len(assignments))
+	}
+}
 
 func readyNode(id string) api.Node {
 	return api.Node{Metadata: api.Metadata{ID: id}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}}

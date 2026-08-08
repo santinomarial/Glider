@@ -24,7 +24,7 @@ func New(client *clientv3.Client, clusterID, nodeID, owner string, ttl time.Dura
 	if client == nil || clusterID == "" || nodeID == "" || owner == "" {
 		return nil, errors.New("client, cluster, node, and owner are required")
 	}
-	if ttl < 3*time.Second {
+	if ttl < time.Second {
 		ttl = 10 * time.Second
 	}
 	if fenceAfter <= ttl {
