@@ -61,6 +61,10 @@ func (s *Service) GetTask(ctx context.Context, in *structpb.Struct) (*structpb.S
 	value, err := s.store.GetTask(ctx, id)
 	return encode(value, mapError(err))
 }
+func (s *Service) ListTasks(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
+	values, err := s.store.ListTasks(ctx)
+	return encode(map[string]any{"items": values}, mapError(err))
+}
 func (s *Service) ListNodes(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
 	values, err := s.store.ListNodes(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
@@ -172,6 +176,7 @@ type server interface {
 	PutTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutNode(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	GetTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	ListTasks(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListNodes(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListAssignments(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -212,6 +217,9 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("GetTask", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.GetTask(c, r)
+	}),
+	unary("ListTasks", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.ListTasks(c, r)
 	}),
 	unary("ListNodes", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListNodes(c, r)

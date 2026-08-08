@@ -8,7 +8,7 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **Phase 19 — observable distributed control plane**. Glider now
+Status: **Phase 20 — operator CLI**. Glider now
 adds bridge/veth networking, persistent IPAM, DNS, NAT and host-port
 publication; a restart-safe `gliderd` reconciliation loop; an etcd-backed
 versioned gRPC control plane; and a resource-aware scheduler whose assignment
@@ -40,6 +40,7 @@ Phase 17.
 See [docs/design/service-discovery.md](docs/design/service-discovery.md) for
 Phase 18.
 See [docs/design/observability.md](docs/design/observability.md) for Phase 19.
+See [docs/design/cli.md](docs/design/cli.md) for Phase 20.
 
 Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
 run of the full unit + integration test suite (re-execs itself inside a
