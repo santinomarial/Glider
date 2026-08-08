@@ -80,6 +80,7 @@ type Task struct {
 type TaskSpec struct {
 	WorkloadID   string            `json:"workload_id"`
 	Image        string            `json:"image"`
+	Command      []string          `json:"command,omitempty"`
 	Resources    Resources         `json:"resources"`
 	NodeSelector map[string]string `json:"node_selector,omitempty"`
 	HostPorts    []uint16          `json:"host_ports,omitempty"`
@@ -98,6 +99,8 @@ type Assignment struct {
 	NodeID     string    `json:"node_id"`
 	Generation int64     `json:"generation"`
 	Resources  Resources `json:"resources"`
+	Image      string    `json:"image"`
+	Command    []string  `json:"command,omitempty"`
 	HostPorts  []uint16  `json:"host_ports,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }

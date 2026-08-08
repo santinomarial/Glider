@@ -91,7 +91,7 @@ func (s *Store) Bind(_ context.Context, r store.BindRequest) (api.Assignment, er
 		return api.Assignment{}, store.ErrInsufficientCapacity
 	}
 	gen := t.Metadata.Generation + 1
-	a := api.Assignment{APIVersion: api.Version, Metadata: api.Metadata{ID: t.Metadata.ID + "/" + fmt.Sprint(gen), Generation: gen}, TaskID: t.Metadata.ID, WorkloadID: t.Spec.WorkloadID, NodeID: n.Metadata.ID, Generation: gen, Resources: t.Spec.Resources, HostPorts: append([]uint16(nil), t.Spec.HostPorts...), CreatedAt: time.Now().UTC()}
+	a := api.Assignment{APIVersion: api.Version, Metadata: api.Metadata{ID: t.Metadata.ID + "/" + fmt.Sprint(gen), Generation: gen}, TaskID: t.Metadata.ID, WorkloadID: t.Spec.WorkloadID, NodeID: n.Metadata.ID, Generation: gen, Resources: t.Spec.Resources, Image: t.Spec.Image, Command: append([]string(nil), t.Spec.Command...), HostPorts: append([]uint16(nil), t.Spec.HostPorts...), CreatedAt: time.Now().UTC()}
 	t.Status.Phase = api.TaskScheduled
 	t.Status.NodeID = n.Metadata.ID
 	t.Status.AssignmentGeneration = gen
