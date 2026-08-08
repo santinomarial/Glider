@@ -52,7 +52,9 @@ func buildBinaries(t *testing.T) (glider, helper string) {
 		}
 
 		gliderBin = filepath.Join(dir, "glider-runtime")
-		out, err := exec.Command("go", "build", "-o", gliderBin, "../../../cmd/glider-runtime").CombinedOutput()
+		buildRuntime := exec.Command("go", "build", "-o", gliderBin, "../../../cmd/glider-runtime")
+		buildRuntime.Env = append(os.Environ(), "CGO_ENABLED=0")
+		out, err := buildRuntime.CombinedOutput()
 		if err != nil {
 			buildErr = fmt.Errorf("build glider-runtime: %w\n%s", err, out)
 			return
