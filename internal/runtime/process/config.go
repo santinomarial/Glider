@@ -54,6 +54,8 @@ const (
 	envStateDir    = "_GLIDER_STATE_DIR"
 	envContainerID = "_GLIDER_CONTAINER_ID"
 	envStopGrace   = "_GLIDER_STOP_GRACE"
+	envImageEnv    = "_GLIDER_IMAGE_ENV"
+	envWorkingDir  = "_GLIDER_WORKING_DIR"
 )
 
 // defaultStopGrace is how long glider-init waits after forwarding SIGTERM
@@ -112,6 +114,11 @@ type Config struct {
 	// "max" (unlimited), not merely left unset (cgroup.Resources' doc
 	// comment).
 	Resources cgroup.Resources
+
+	// Env and WorkingDir come from the OCI image config when the Phase 5-7
+	// image manager prepares RootFS. Env entries use KEY=VALUE form.
+	Env []string
+	WorkingDir string
 }
 
 const defaultStateDir = "/var/lib/glider/containers"

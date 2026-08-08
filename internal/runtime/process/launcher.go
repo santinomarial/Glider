@@ -3,6 +3,8 @@
 package process
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -75,6 +77,8 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 		RootFS:      cfg.RootFS,
 		Argv:        cfg.Argv,
 		Hostname:    cfg.Hostname,
+		Env:         append([]string(nil), cfg.Env...),
+		WorkingDir:  cfg.WorkingDir,
 		CgroupPath:  cgroupPath,
 		Resources:   toStateResources(cfg.Resources),
 		CreatedAt:   now,
@@ -138,12 +142,16 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 
 	cmd := exec.Command("/proc/self/exe", append([]string{ReexecArg}, cfg.Argv...)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	envJSON, err := json.Marshal(cfg.Env)
+	if err != nil { return failLaunch(dir, &rec, fmt.Errorf("encode workload environment: %w", err)) }
 	cmd.Env = append(os.Environ(),
 		envRootFS+"="+cfg.RootFS,
 		envHostname+"="+cfg.Hostname,
 		envStateDir+"="+cfg.stateDir(),
 		envContainerID+"="+cfg.ContainerID,
 		envStopGrace+"="+stopGrace.String(),
+		envImageEnv+"="+base64.StdEncoding.EncodeToString(envJSON),
+		envWorkingDir+"="+cfg.WorkingDir,
 	)
 	// Order fixes fd 3/4/5 in the child; must match config.go's
 	// fdReadyWrite/fdGoRead/fdResultWrite constants that init.go reads.

@@ -40,7 +40,7 @@ var ErrUnsupportedVersion = errors.New("unsupported container state schema versi
 // (e.g. Phase 1's "Pid" was the workload's own PID; Phase 2's "InitPID"
 // is not the same thing; Phase 4 adds cgroup identity — see
 // container-lifecycle.md and docs/design/cgroups.md).
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 // Phase is a container lifecycle state, per container-lifecycle.md §1.
 type Phase string
@@ -104,6 +104,8 @@ type Record struct {
 	RootFS   string   `json:"rootfs"`
 	Argv     []string `json:"argv"`
 	Hostname string   `json:"hostname,omitempty"`
+	Env []string `json:"env,omitempty"`
+	WorkingDir string `json:"working_dir,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
