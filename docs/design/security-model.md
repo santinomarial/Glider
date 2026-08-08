@@ -1,6 +1,6 @@
 # Security model
 
-Status: Phase 0 design; concrete enforcement lands in Phase 8.
+Status: Phase 8 implemented against this contract.
 Related: [runtime.md](runtime.md) (namespace/mount mechanics this builds on),
 [container-lifecycle.md](container-lifecycle.md).
 
@@ -130,3 +130,34 @@ visibility) are the acceptance criteria for this document, implemented
 starting Phase 8. A security claim in this doc that isn't backed by one of
 these tests by the time Phase 8 closes is a gap to fix, not a doc to
 quietly leave aspirational.
+
+## 7. Phase 8 implementation
+
+Security is applied to the workload child, not `glider-init`. Immediately
+before the real workload `execve`, an internal trampoline:
+
+1. drops every capability from the bounding set except the default allowlist;
+2. sets permitted/effective to that allowlist and clears inheritable/ambient;
+3. sets `PR_SET_NO_NEW_PRIVS`;
+4. installs the amd64 seccomp-BPF policy; and
+5. executes the workload.
+
+A CLOEXEC status pipe preserves the lifecycle guarantee: `RUNNING` is
+reported only after the trampoline becomes the real workload. Policy or exec
+failure remains a pre-RUNNING `FAILED` transition.
+
+The retained capabilities are `CAP_CHOWN`, `CAP_DAC_OVERRIDE`, `CAP_FOWNER`,
+`CAP_FSETID`, `CAP_KILL`, `CAP_SETGID`, `CAP_SETUID`, and
+`CAP_NET_BIND_SERVICE`. Administrative, ptrace, module, raw-network, and raw
+I/O capabilities are absent.
+
+The filter returns `EPERM` for mount/unmount/pivot-root, ptrace, reboot,
+module operations, kexec, open-by-handle, namespace creation/join, BPF, and
+perf-event access. An architecture mismatch kills the process; non-amd64
+installation is rejected because Glider remains amd64-first. Broad process
+primitives such as `clone`, required by ordinary language runtimes for
+threads, are intentionally allowed.
+
+The privileged test executes the installed policy in a subprocess, verifies
+`NoNewPrivs: 1` and seccomp filter mode through `/proc/self/status`, and
+requires a forbidden `unshare` call to fail with `EPERM`.

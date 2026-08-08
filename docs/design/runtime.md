@@ -1,7 +1,8 @@
 # Runtime design
 
-Status: Phase 1 and Phase 2 implemented against this contract; see §7 for
-what Phase 1 concretized and §8 for what Phase 2 added/superseded. §5 is
+Status: Phases 1–8 implemented against this contract; see §7 for
+what Phase 1 concretized, §8 for Phase 2 supervision, and §9 for the
+Phase 5–8 image/security integration. §5 is
 superseded by §8.2 — the container's init process (`glider-init`) remains
 PID 1 for the container's whole life and supervises the workload as a
 child, per [ADR-0006](../adr/0006-glider-init-pid1-supervisor.md); §5 is

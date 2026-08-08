@@ -12,8 +12,9 @@
 // is expected to call the equivalent internal API (process.Recover)
 // directly rather than shelling out to this subcommand.
 //
-// It has no daemon, no image handling, and no cgroup/network/security
-// enforcement — see runtime.md §6 for the exact, frozen scope boundary.
+// It remains a standalone launcher (gliderd arrives in Phase 10), but Phases
+// 5–8 added native OCI image preparation and workload security. Networking
+// remains loopback-only until Phase 9.
 package main
 
 import (
