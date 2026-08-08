@@ -22,7 +22,11 @@ set -euo pipefail
 export GLIDER_REQUIRE_PRIVILEGED_TESTS=1
 
 DOCKER_IMAGE="golang:1.26"
-DOCKER_PLATFORM="${GLIDER_TEST_PLATFORM:-linux/amd64}"
+case "$(uname -m)" in
+	arm64|aarch64) DEFAULT_DOCKER_PLATFORM="linux/arm64" ;;
+	*) DEFAULT_DOCKER_PLATFORM="linux/amd64" ;;
+esac
+DOCKER_PLATFORM="${GLIDER_TEST_PLATFORM:-${DEFAULT_DOCKER_PLATFORM}}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ "$(uname -s)" != "Linux" ]; then
