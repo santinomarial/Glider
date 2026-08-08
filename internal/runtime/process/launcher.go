@@ -143,7 +143,9 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	cmd := exec.Command("/proc/self/exe", append([]string{ReexecArg}, cfg.Argv...)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	envJSON, err := json.Marshal(cfg.Env)
-	if err != nil { return failLaunch(dir, &rec, fmt.Errorf("encode workload environment: %w", err)) }
+	if err != nil {
+		return failLaunch(dir, &rec, fmt.Errorf("encode workload environment: %w", err))
+	}
 	cmd.Env = append(os.Environ(),
 		envRootFS+"="+cfg.RootFS,
 		envHostname+"="+cfg.Hostname,

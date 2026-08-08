@@ -38,7 +38,13 @@ func RunInit(argv []string) {
 	containerID := os.Getenv(envContainerID)
 	workingDir := os.Getenv(envWorkingDir)
 	var imageEnv []string
-	if raw := os.Getenv(envImageEnv); raw != "" { decoded, err := base64.StdEncoding.DecodeString(raw); if err != nil || json.Unmarshal(decoded,&imageEnv)!=nil { fmt.Fprintln(os.Stderr,"glider-runtime: invalid internal image environment");os.Exit(2) } }
+	if raw := os.Getenv(envImageEnv); raw != "" {
+		decoded, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || json.Unmarshal(decoded, &imageEnv) != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime: invalid internal image environment")
+			os.Exit(2)
+		}
+	}
 
 	if rootfs == "" || hostname == "" || stateRoot == "" || containerID == "" || len(argv) == 0 {
 		// Fds may not be valid yet if invoked outside the real contract
@@ -134,8 +140,17 @@ func RunInit(argv []string) {
 	if err := pivotRoot(rootfs); err != nil {
 		fail(resultW, err)
 	}
-	if err := applyWorkloadEnvironment(imageEnv); err != nil { fail(resultW,err) }
-	if workingDir != "" { if !filepath.IsAbs(workingDir) { fail(resultW,fmt.Errorf("OCI working directory must be absolute: %q",workingDir)) }; if err:=os.Chdir(workingDir);err!=nil{fail(resultW,fmt.Errorf("enter OCI working directory: %w",err))} }
+	if err := applyWorkloadEnvironment(imageEnv); err != nil {
+		fail(resultW, err)
+	}
+	if workingDir != "" {
+		if !filepath.IsAbs(workingDir) {
+			fail(resultW, fmt.Errorf("OCI working directory must be absolute: %q", workingDir))
+		}
+		if err := os.Chdir(workingDir); err != nil {
+			fail(resultW, fmt.Errorf("enter OCI working directory: %w", err))
+		}
+	}
 
 	path, err := exec.LookPath(argv[0])
 	if err != nil {
@@ -152,9 +167,29 @@ func RunInit(argv []string) {
 	os.Exit(2)
 }
 
-func applyWorkloadEnvironment(entries []string) error { for _,entry:=range entries{key,value,ok:=strings.Cut(entry,"=");if !ok||key==""||strings.ContainsRune(key,'\x00')||strings.ContainsRune(value,'\x00'){return fmt.Errorf("invalid OCI environment entry %q",entry)};if err:=os.Setenv(key,value);err!=nil{return err}};return nil }
+func applyWorkloadEnvironment(entries []string) error {
+	for _, entry := range entries {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || key == "" || strings.ContainsRune(key, '\x00') || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("invalid OCI environment entry %q", entry)
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-func workloadEnvironment() []string { env:=os.Environ();out:=env[:0];for _,entry:=range env{if !strings.HasPrefix(entry,"_GLIDER_"){out=append(out,entry)}};return out }
+func workloadEnvironment() []string {
+	env := os.Environ()
+	out := env[:0]
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, "_GLIDER_") {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
 
 // fail reports err to the launcher over the result channel and terminates.
 // It is the only exit path for setup failures once resultW is known to be

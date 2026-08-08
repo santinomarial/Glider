@@ -101,11 +101,11 @@ type Record struct {
 	ContainerID   string `json:"container_id"`
 	Phase         Phase  `json:"phase"`
 
-	RootFS   string   `json:"rootfs"`
-	Argv     []string `json:"argv"`
-	Hostname string   `json:"hostname,omitempty"`
-	Env []string `json:"env,omitempty"`
-	WorkingDir string `json:"working_dir,omitempty"`
+	RootFS     string   `json:"rootfs"`
+	Argv       []string `json:"argv"`
+	Hostname   string   `json:"hostname,omitempty"`
+	Env        []string `json:"env,omitempty"`
+	WorkingDir string   `json:"working_dir,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

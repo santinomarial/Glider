@@ -144,15 +144,30 @@ func runCmd(args []string) int {
 	var workingDir string
 	if *imageRef != "" {
 		imageManager, err = imagemanager.New(*dataDir, http.DefaultClient, nil, *insecureRegistry)
-		if err != nil { fmt.Fprintln(os.Stderr, "glider-runtime: initialize image manager:", err); return 1 }
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime: initialize image manager:", err)
+			return 1
+		}
 		prepared, err := imageManager.Prepare(context.Background(), *imageRef, id)
-		if err != nil { fmt.Fprintln(os.Stderr, "glider-runtime: prepare image:", err); return 1 }
-		defer func(){ if err:=imageManager.Remove(id);err!=nil{fmt.Fprintln(os.Stderr,"glider-runtime: remove image snapshot:",err)} }()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime: prepare image:", err)
+			return 1
+		}
+		defer func() {
+			if err := imageManager.Remove(id); err != nil {
+				fmt.Fprintln(os.Stderr, "glider-runtime: remove image snapshot:", err)
+			}
+		}()
 		*rootfs = prepared.RootFS
 		imageEnv = append([]string(nil), prepared.Image.Config.Env...)
 		workingDir = prepared.Image.Config.WorkingDir
-		if len(argv) == 0 { argv = append(append([]string(nil), prepared.Image.Config.Entrypoint...), prepared.Image.Config.Cmd...) }
-		if len(argv) == 0 { fmt.Fprintln(os.Stderr,"glider-runtime: image has no Entrypoint/Cmd and no command was supplied");return 2 }
+		if len(argv) == 0 {
+			argv = append(append([]string(nil), prepared.Image.Config.Entrypoint...), prepared.Image.Config.Cmd...)
+		}
+		if len(argv) == 0 {
+			fmt.Fprintln(os.Stderr, "glider-runtime: image has no Entrypoint/Cmd and no command was supplied")
+			return 2
+		}
 	}
 
 	cfg := process.Config{

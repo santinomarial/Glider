@@ -117,7 +117,7 @@ type Config struct {
 
 	// Env and WorkingDir come from the OCI image config when the Phase 5-7
 	// image manager prepares RootFS. Env entries use KEY=VALUE form.
-	Env []string
+	Env        []string
 	WorkingDir string
 }
 
