@@ -87,6 +87,12 @@ func (d *RuntimeDriver) CheckProbe(ctx context.Context, a api.Assignment, probe 
 	return (&healthcheck.Prober{}).Check(ctx, probe)
 }
 
+func (d *RuntimeDriver) EndpointAddress(a api.Assignment) (string, error) {
+	endpoint, err := d.network.Endpoint(containerID(a))
+	if err != nil { return "", err }
+	return endpoint.Address.String(), nil
+}
+
 func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*RuntimeDriver, error) {
 	if dataRoot == "" || !filepath.IsAbs(dataRoot) {
 		return nil, errors.New("data root must be absolute")

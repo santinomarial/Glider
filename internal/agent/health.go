@@ -9,10 +9,12 @@ import (
 
 type ProbeChecker interface {
 	CheckProbe(context.Context, api.Assignment, api.Probe) error
+	EndpointAddress(api.Assignment) (string, error)
 }
 type HealthStore interface {
 	Snapshot(context.Context, string) ([]api.Assignment, error)
 	ReportTaskHealth(context.Context, string, int64, bool) error
+	ReportTaskEndpoint(context.Context, string, int64, string) error
 	RestartTask(context.Context, string, int64) error
 }
 type HealthDaemon struct {
@@ -53,6 +55,9 @@ func (d *HealthDaemon) reconcile(ctx context.Context, assignments []api.Assignme
 	for _, a := range assignments {
 		key := containerID(a)
 		present[key] = true
+		if address, err := d.checker.EndpointAddress(a); err == nil {
+			_ = d.store.ReportTaskEndpoint(ctx, a.TaskID, a.Generation, address)
+		}
 		if now.Before(d.next[key]) {
 			continue
 		}

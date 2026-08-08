@@ -60,6 +60,14 @@ func (s *Store) PutWorkload(ctx context.Context, w api.Workload, expectedRevisio
 	w.Metadata.Revision = 0
 	return putResource(ctx, s.client, s.key("workloads", w.Metadata.ID), w, expectedRevision)
 }
+func (s *Store) PutService(ctx context.Context, service api.Service, expectedRevision int64) (api.Service, error) {
+	if !validID(service.Metadata.ID) {
+		return service, errors.New("invalid service ID")
+	}
+	service.APIVersion = api.Version
+	service.Metadata.Revision = 0
+	return putResource(ctx, s.client, s.key("services", service.Metadata.ID), service, expectedRevision)
+}
 
 func putResource[T any](ctx context.Context, c *clientv3.Client, key string, value T, expected int64) (T, error) {
 	data, err := json.Marshal(value)
@@ -90,7 +98,22 @@ func setRevision[T any](v *T, rev int64) {
 		x.Metadata.Revision = rev
 	case *api.Workload:
 		x.Metadata.Revision = rev
+	case *api.Service:
+		x.Metadata.Revision = rev
 	}
+}
+func (s *Store) ListServices(ctx context.Context) ([]api.Service, error) {
+	resp, err := s.client.Get(ctx, s.kindPrefix("services"), clientv3.WithPrefix())
+	if err != nil { return nil, err }
+	out := make([]api.Service, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		var service api.Service
+		if err := json.Unmarshal(kv.Value, &service); err != nil { return nil, err }
+		service.Metadata.Revision = kv.ModRevision
+		out = append(out, service)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Metadata.ID < out[j].Metadata.ID })
+	return out, nil
 }
 
 func (s *Store) GetTask(ctx context.Context, id string) (api.Task, error) {
@@ -277,6 +300,20 @@ func (s *Store) ReportTaskHealth(ctx context.Context, taskID string, generation 
 	if !resp.Succeeded {
 		return storeapi.ErrConflict
 	}
+	return nil
+}
+func (s *Store) ReportTaskEndpoint(ctx context.Context, taskID string, generation int64, address string) error {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil { return err }
+	if task.Status.AssignmentGeneration != generation { return storeapi.ErrConflict }
+	if task.Status.Address == address { return nil }
+	revision := task.Metadata.Revision
+	task.Metadata.Revision = 0
+	task.Status.Address = address
+	data, _ := json.Marshal(task)
+	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks", taskID)), "=", revision)).Then(clientv3.OpPut(s.key("tasks", taskID), string(data))).Commit()
+	if err != nil { return err }
+	if !resp.Succeeded { return storeapi.ErrConflict }
 	return nil
 }
 

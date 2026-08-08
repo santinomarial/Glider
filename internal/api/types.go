@@ -158,9 +158,33 @@ type TaskStatus struct {
 	Phase                TaskPhase `json:"phase"`
 	AssignmentGeneration int64     `json:"assignment_generation,omitempty"`
 	NodeID               string    `json:"node_id,omitempty"`
+	Address              string    `json:"address,omitempty"`
 	Ready                bool      `json:"ready"`
 	RestartCount         int       `json:"restart_count,omitempty"`
 	LastHealthTransition time.Time `json:"last_health_transition,omitempty"`
+}
+
+type Service struct {
+	APIVersion string        `json:"apiVersion"`
+	Metadata   Metadata      `json:"metadata"`
+	Spec       ServiceSpec   `json:"spec"`
+	Status     ServiceStatus `json:"status"`
+}
+type ServiceSpec struct {
+	Selector   map[string]string `json:"selector"`
+	Port       uint16            `json:"port"`
+	TargetPort uint16            `json:"target_port"`
+}
+type ServiceEndpoint struct {
+	TaskID     string `json:"task_id"`
+	NodeID     string `json:"node_id"`
+	Address    string `json:"address"`
+	Port       uint16 `json:"port"`
+	Generation int64  `json:"generation"`
+}
+type ServiceStatus struct {
+	Endpoints []ServiceEndpoint `json:"endpoints,omitempty"`
+	UpdatedAt time.Time         `json:"updated_at,omitempty"`
 }
 
 type Assignment struct {
