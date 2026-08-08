@@ -69,6 +69,16 @@ func (s *Service) ListAssignments(ctx context.Context, _ *structpb.Struct) (*str
 	values, err := s.store.ListAssignments(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
 }
+func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	var workload api.Workload
+	if err := decode(in, &workload); err != nil { return nil, invalid(err) }
+	saved, err := s.store.PutWorkload(ctx, workload, workload.Metadata.Revision)
+	return encode(saved, mapError(err))
+}
+func (s *Service) ListWorkloads(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
+	values, err := s.store.ListWorkloads(ctx)
+	return encode(map[string]any{"items": values}, mapError(err))
+}
 func (s *Service) Schedule(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "task_id")
 	if err != nil {
@@ -138,6 +148,8 @@ type server interface {
 	GetTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListNodes(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListAssignments(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	PutWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	ListWorkloads(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	Schedule(context.Context, *structpb.Struct) (*structpb.Struct, error)
 }
 
@@ -176,6 +188,12 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("ListAssignments", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListAssignments(c, r)
+	}),
+	unary("PutWorkload", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.PutWorkload(c, r)
+	}),
+	unary("ListWorkloads", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.ListWorkloads(c, r)
 	}),
 	unary("Schedule", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.Schedule(c, r)
