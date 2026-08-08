@@ -2,7 +2,11 @@
 
 package network
 
-import "testing"
+import (
+	"net/netip"
+	"path/filepath"
+	"testing"
+)
 
 func TestVethNamesDeterministicAndBounded(t *testing.T) {
 	a, b := vethNames("workload-0/1")
@@ -12,10 +16,26 @@ func TestVethNamesDeterministicAndBounded(t *testing.T) {
 	}
 }
 func TestSafeOwner(t *testing.T) {
-	for _, bad := range []string{"", "../x", "a/b", ".", ".."} {
+	for _, bad := range []string{"", "../x", "a/b", `a\b`, ".", ".."} {
 		if safeOwner(bad) {
 			t.Errorf("accepted %q", bad)
 		}
+	}
+}
+
+func TestPublishedPortConflictAcrossEndpoints(t *testing.T) {
+	m, err := NewManager(filepath.Join(t.TempDir(), "network"), "10.64.0.0/24", DefaultBridge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.save(Endpoint{Owner: "first", Address: netip.MustParseAddr("10.64.0.2"), Ports: []PortMapping{{Protocol: "tcp", HostPort: 8080, ContainerPort: 80}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.validatePortConflicts("second", []PortMapping{{Protocol: "tcp", HostPort: 8080, ContainerPort: 8080}}); err == nil {
+		t.Fatal("expected published host-port conflict")
+	}
+	if err := m.validatePortConflicts("second", []PortMapping{{Protocol: "udp", HostPort: 8080, ContainerPort: 8080}}); err != nil {
+		t.Fatalf("TCP and UDP ports should not conflict: %v", err)
 	}
 }
 func TestValidatePorts(t *testing.T) {

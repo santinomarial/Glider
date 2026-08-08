@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
@@ -73,6 +74,14 @@ func (m *Manager) EnsureWithPorts(ctx context.Context, owner string, initPID int
 	}
 	if !safeOwner(owner) || initPID <= 0 {
 		return Endpoint{}, errors.New("invalid endpoint owner or PID")
+	}
+	unlock, err := m.lock()
+	if err != nil {
+		return Endpoint{}, err
+	}
+	defer unlock()
+	if err := m.validatePortConflicts(owner, ports); err != nil {
+		return Endpoint{}, err
 	}
 	allocation, err := m.pool.Ensure(owner)
 	if err != nil {
@@ -172,23 +181,25 @@ func (m *Manager) Remove(owner string) error {
 	if !safeOwner(owner) {
 		return errors.New("invalid endpoint owner")
 	}
+	unlock, err := m.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	host, _ := vethNames(owner)
 	if link, err := netlink.LinkByName(host); err == nil {
 		if err := netlink.LinkDel(link); err != nil {
 			return err
 		}
 	}
-	if err := m.pool.Release(owner); err != nil {
-		return err
-	}
-	err := os.Remove(m.path(owner))
+	err = os.Remove(m.path(owner))
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := m.reconcileNAT(); err != nil {
 		return err
 	}
-	return nil
+	return m.pool.Release(owner)
 }
 func (m *Manager) ensureBridge() error {
 	link, err := netlink.LinkByName(m.bridge)
@@ -231,7 +242,45 @@ func vethNames(owner string) (string, string) {
 	return "gv" + suffix, "gp" + suffix
 }
 func safeOwner(s string) bool {
-	return s != "" && len(s) <= 128 && filepath.Base(s) == s && s != "." && s != ".."
+	return s != "" && len(s) <= 128 && filepath.Base(s) == s && s != "." && s != ".." && !strings.ContainsAny(s, "\\\x00")
+}
+
+func (m *Manager) lock() (func(), error) {
+	f, err := os.OpenFile(filepath.Join(m.root, "network.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+}
+
+func (m *Manager) validatePortConflicts(owner string, ports []PortMapping) error {
+	if err := validatePorts(ports); err != nil {
+		return err
+	}
+	wanted := make(map[string]struct{}, len(ports))
+	for _, p := range ports {
+		wanted[fmt.Sprintf("%s/%d", p.Protocol, p.HostPort)] = struct{}{}
+	}
+	endpoints, err := m.loadEndpoints()
+	if err != nil {
+		return err
+	}
+	for _, endpoint := range endpoints {
+		if endpoint.Owner == owner {
+			continue
+		}
+		for _, p := range endpoint.Ports {
+			key := fmt.Sprintf("%s/%d", p.Protocol, p.HostPort)
+			if _, exists := wanted[key]; exists {
+				return fmt.Errorf("host port %s is already owned by %s", key, endpoint.Owner)
+			}
+		}
+	}
+	return nil
 }
 func validatePorts(ports []PortMapping) error {
 	seen := map[string]bool{}

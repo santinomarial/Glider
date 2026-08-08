@@ -13,8 +13,8 @@
 // directly rather than shelling out to this subcommand.
 //
 // It remains a standalone launcher (gliderd arrives in Phase 10), but Phases
-// 5–8 added native OCI image preparation and workload security. Networking
-// remains loopback-only until Phase 9.
+// 5–9 added native OCI image preparation, workload security, and node-local
+// bridge networking with DNS, NAT, and host-port publication.
 package main
 
 import (
@@ -79,7 +79,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider-runtime run (--rootfs <path> | --image <reference>) [--hostname <name>] [--cpus <n>] [--memory <size>] [--pids <n>] -- [cmd [args...]]")
+	fmt.Fprintln(os.Stderr, "usage: glider-runtime run (--rootfs <path> | --image <reference>) [--hostname <name>] [--cpus <n>] [--memory <size>] [--pids <n>] [--publish HOST:CONTAINER[/protocol]] -- [cmd [args...]]")
 	fmt.Fprintln(os.Stderr, "       glider-runtime recover --state-dir <dir> <container-id>")
 }
 
