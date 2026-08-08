@@ -13,11 +13,17 @@ import (
 // path strings (the process sees "/" after pivot_root while the launcher sees
 // the host-side rootfs path).
 func VerifyProcessRoot(pid int, rootfs string) (bool, error) {
-	if pid <= 0 || rootfs == "" { return false, fmt.Errorf("invalid process root identity") }
+	if pid <= 0 || rootfs == "" {
+		return false, fmt.Errorf("invalid process root identity")
+	}
 	processRoot, err := os.Stat(fmt.Sprintf("/proc/%d/root", pid))
-	if err != nil { return false, fmt.Errorf("stat process root: %w", err) }
+	if err != nil {
+		return false, fmt.Errorf("stat process root: %w", err)
+	}
 	expected, err := os.Stat(rootfs)
-	if err != nil { return false, fmt.Errorf("stat expected rootfs: %w", err) }
+	if err != nil {
+		return false, fmt.Errorf("stat expected rootfs: %w", err)
+	}
 	return os.SameFile(processRoot, expected), nil
 }
 

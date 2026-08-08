@@ -265,7 +265,9 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	if ok, err := VerifyProcessRoot(rec.InitPID, cfg.RootFS); err != nil || !ok {
 		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
 		reap()
-		if err == nil { err = fmt.Errorf("container init root does not match requested rootfs") }
+		if err == nil {
+			err = fmt.Errorf("container init root does not match requested rootfs")
+		}
 		return failLaunch(dir, &rec, fmt.Errorf("verify container rootfs: %w", err))
 	}
 

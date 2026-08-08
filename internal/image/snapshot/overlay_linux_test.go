@@ -23,21 +23,49 @@ func TestPathsRejectUnsafeID(t *testing.T) {
 }
 
 func TestOverlaySnapshotsShareLowersButIsolateWrites(t *testing.T) {
-	if os.Geteuid()!=0 { t.Skip("OverlayFS mount requires root") }
-	base:=filepath.Join(t.TempDir(),"base");top:=filepath.Join(t.TempDir(),"top")
-	for _,dir:=range []string{base,top}{if err:=os.MkdirAll(dir,0o755);err!=nil{t.Fatal(err)}}
-	if err:=os.WriteFile(filepath.Join(base,"common"),[]byte("base"),0o644);err!=nil{t.Fatal(err)}
-	if err:=os.WriteFile(filepath.Join(top,"common"),[]byte("top"),0o644);err!=nil{t.Fatal(err)}
-	m,_:=NewManager(t.TempDir())
-	one,err:=m.Ensure("one",[]string{base,top})
-	if errors.Is(err,syscall.EPERM)&&os.Getenv("GLIDER_REQUIRE_PRIVILEGED_TESTS")!="1"{t.Skip("mount not permitted")}
-	if err!=nil{t.Fatal(err)}
+	if os.Geteuid() != 0 {
+		t.Skip("OverlayFS mount requires root")
+	}
+	base := filepath.Join(t.TempDir(), "base")
+	top := filepath.Join(t.TempDir(), "top")
+	for _, dir := range []string{base, top} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(base, "common"), []byte("base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(top, "common"), []byte("top"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := NewManager(t.TempDir())
+	one, err := m.Ensure("one", []string{base, top})
+	if errors.Is(err, syscall.EPERM) && os.Getenv("GLIDER_REQUIRE_PRIVILEGED_TESTS") != "1" {
+		t.Skip("mount not permitted")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer m.Remove("one")
-	got,err:=os.ReadFile(filepath.Join(one.Merged,"common"));if err!=nil||string(got)!="top"{t.Fatalf("precedence=%q, %v",got,err)}
-	if err:=os.WriteFile(filepath.Join(one.Merged,"private"),[]byte("one"),0o644);err!=nil{t.Fatal(err)}
-	two,err:=m.Ensure("two",[]string{base,top});if err!=nil{t.Fatal(err)};defer m.Remove("two")
-	if _,err:=os.Stat(filepath.Join(two.Merged,"private"));!os.IsNotExist(err){t.Fatalf("write leaked to second snapshot: %v",err)}
-	if _,err:=os.Stat(filepath.Join(base,"private"));!os.IsNotExist(err){t.Fatalf("write leaked to lower: %v",err)}
+	got, err := os.ReadFile(filepath.Join(one.Merged, "common"))
+	if err != nil || string(got) != "top" {
+		t.Fatalf("precedence=%q, %v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(one.Merged, "private"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	two, err := m.Ensure("two", []string{base, top})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Remove("two")
+	if _, err := os.Stat(filepath.Join(two.Merged, "private")); !os.IsNotExist(err) {
+		t.Fatalf("write leaked to second snapshot: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "private")); !os.IsNotExist(err) {
+		t.Fatalf("write leaked to lower: %v", err)
+	}
 }
 
 func TestRecoverCleansPartialUnMountedSnapshot(t *testing.T) {
