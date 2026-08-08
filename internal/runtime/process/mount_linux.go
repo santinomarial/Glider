@@ -67,6 +67,13 @@ const workloadRuntimePath = "/dev/.glider-runtime"
 // needs one controlled re-exec before it execs the workload.
 func mountRuntimeSelf(root string) error {
 	target := filepath.Join(root, workloadRuntimePath)
+	source, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve runtime executable: %w", err)
+	}
+	if source, err = filepath.EvalSymlinks(source); err != nil {
+		return fmt.Errorf("resolve runtime executable symlinks: %w", err)
+	}
 	f, err := os.OpenFile(target, os.O_CREATE|os.O_RDONLY, 0o500)
 	if err != nil {
 		return fmt.Errorf("create runtime trampoline mountpoint: %w", err)
@@ -74,7 +81,7 @@ func mountRuntimeSelf(root string) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := syscall.Mount("/proc/self/exe", target, "", syscall.MS_BIND, ""); err != nil {
+	if err := syscall.Mount(source, target, "", syscall.MS_BIND, ""); err != nil {
 		return fmt.Errorf("bind runtime trampoline: %w", err)
 	}
 	if err := syscall.Mount("", target, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_RDONLY|syscall.MS_NOSUID|syscall.MS_NODEV, ""); err != nil {
