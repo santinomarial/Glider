@@ -14,7 +14,11 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
+	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/controlplane"
+	workloadcontroller "github.com/santinomarial/glider/internal/controller/workload"
+	"github.com/santinomarial/glider/internal/lease"
+	"github.com/santinomarial/glider/internal/scheduler"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 )
 
@@ -44,6 +48,11 @@ func main() {
 	}
 	server := grpc.NewServer()
 	controlplane.Register(server, service)
+	workloads, err := workloadcontroller.New(store); if err != nil { fatal(err) }
+	schedulerController, err := scheduler.NewController(store); if err != nil { fatal(err) }
+	go func(){ _ = workloads.Run(ctx,2*time.Second) }()
+	go schedulePending(ctx,store,schedulerController)
+	go func(){ _ = lease.NewMonitor(client,*clusterID,store,20*time.Second,2*time.Second).Run(ctx) }()
 	go func() { <-ctx.Done(); server.GracefulStop() }()
 	fmt.Fprintf(os.Stderr, "glider-controlplane: listening on %s\n", listener.Addr())
 	if err := server.Serve(listener); err != nil && ctx.Err() == nil {
@@ -60,3 +69,6 @@ func split(value string) []string {
 	return out
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "glider-controlplane:", err); os.Exit(1) }
+
+type taskLister interface{ListTasks(context.Context)([]api.Task,error)}
+func schedulePending(ctx context.Context,store taskLister,controller *scheduler.Controller){ticker:=time.NewTicker(time.Second);defer ticker.Stop();for{tasks,err:=store.ListTasks(ctx);if err==nil{for _,task:=range tasks{if task.Status.Phase==api.TaskPending{_,_=controller.ScheduleOne(ctx,task.Metadata.ID)}}};select{case<-ctx.Done():return;case<-ticker.C:}}}
