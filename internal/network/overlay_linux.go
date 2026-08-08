@@ -37,6 +37,7 @@ func (m *Manager) EnsureOverlay(localTunnel netip.Addr, peers []Peer, mtu int) e
 	if mtu < 576 || mtu > 9000 {
 		return errors.New("invalid overlay MTU")
 	}
+	if err := validateOverlayPeers(peers); err != nil { return err }
 	unlock, err := m.lock()
 	if err != nil {
 		return err
@@ -91,15 +92,7 @@ func (m *Manager) EnsureOverlay(localTunnel netip.Addr, peers []Peer, mtu int) e
 			_ = netlink.NeighDel(&n)
 		}
 	}
-	seen := map[string]bool{}
 	for _, peer := range peers {
-		if peer.NodeID == "" || !peer.PodCIDR.IsValid() || !peer.PodCIDR.Addr().Is4() || !peer.TunnelAddress.Is4() {
-			return fmt.Errorf("invalid overlay peer %q", peer.NodeID)
-		}
-		if seen[peer.PodCIDR.String()] {
-			return fmt.Errorf("duplicate peer subnet %s", peer.PodCIDR)
-		}
-		seen[peer.PodCIDR.String()] = true
 		dst := net.IPNet{IP: net.IP(peer.PodCIDR.Masked().Addr().AsSlice()), Mask: net.CIDRMask(peer.PodCIDR.Bits(), 32)}
 		if err := netlink.RouteReplace(&netlink.Route{LinkIndex: bridge.Attrs().Index, Dst: &dst, Protocol: gliderRouteProtocol, Scope: netlink.SCOPE_LINK}); err != nil {
 			return err
@@ -115,6 +108,8 @@ func (m *Manager) EnsureOverlay(localTunnel netip.Addr, peers []Peer, mtu int) e
 	}
 	return durableWrite(filepath.Join(m.root, "overlay-peers.json"), data)
 }
+
+func validateOverlayPeers(peers []Peer) error { seenSubnet:=map[string]bool{};seenNode:=map[string]bool{};for _,peer:=range peers{if !safeOwner(peer.NodeID)||!peer.PodCIDR.IsValid()||!peer.PodCIDR.Addr().Is4()||!peer.TunnelAddress.Is4(){return fmt.Errorf("invalid overlay peer %q",peer.NodeID)};subnet:=peer.PodCIDR.Masked().String();if seenSubnet[subnet]||seenNode[peer.NodeID]{return fmt.Errorf("duplicate overlay peer %s",peer.NodeID)};seenSubnet[subnet]=true;seenNode[peer.NodeID]=true};return nil}
 
 func durableWrite(final string, data []byte) error {
 	tmp := final + ".tmp"
