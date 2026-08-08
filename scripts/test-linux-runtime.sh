@@ -22,11 +22,12 @@ set -euo pipefail
 export GLIDER_REQUIRE_PRIVILEGED_TESTS=1
 
 DOCKER_IMAGE="golang:1.26"
+DOCKER_PLATFORM="${GLIDER_TEST_PLATFORM:-linux/amd64}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ "$(uname -s)" != "Linux" ]; then
 	echo "==> Not running on Linux ($(uname -s)) — re-executing inside a privileged ${DOCKER_IMAGE} container"
-	exec docker run --rm --privileged \
+	exec docker run --rm --privileged --platform "${DOCKER_PLATFORM}" \
 		-v "${REPO_ROOT}:/source:ro" --mount type=volume,dst=/work -w /work \
 		-e GLIDER_TEST_STRESS \
 		"${DOCKER_IMAGE}" \
