@@ -39,3 +39,12 @@ func TestRecoverCleansPartialUnMountedSnapshot(t *testing.T) {
 		t.Fatalf("partial snapshot remains: %v", err)
 	}
 }
+
+func TestEqualStringsOrderIsSignificant(t *testing.T) {
+	if !equalStrings([]string{"base", "top"}, []string{"base", "top"}) {
+		t.Fatal("equal slices differ")
+	}
+	if equalStrings([]string{"base", "top"}, []string{"top", "base"}) {
+		t.Fatal("layer order must be significant")
+	}
+}

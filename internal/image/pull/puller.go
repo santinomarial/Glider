@@ -153,6 +153,9 @@ send:
 	}
 	close(jobs)
 	wg.Wait()
+	if firstErr == nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	return firstErr
 }
 

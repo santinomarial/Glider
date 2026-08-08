@@ -61,6 +61,13 @@ func TestUnpackRejectsSymlinkParentEscape(t *testing.T) {
 	))
 }
 
+func TestUnpackRejectsHardlinkThroughSymlinkParent(t *testing.T) {
+	assertUnsafeLayer(t, tarBytes(t,
+		entry{"escape", tar.TypeSymlink, nil, "../../outside", os.Getuid(), os.Getgid()},
+		entry{"hard", tar.TypeLink, nil, "escape/host-file", os.Getuid(), os.Getgid()},
+	))
+}
+
 func TestUnpackEnforcesExpandedSizeLimit(t *testing.T) {
 	data := tarBytes(t, entry{"large", tar.TypeReg, []byte("12345"), "", os.Getuid(), os.Getgid()})
 	blob := filepath.Join(t.TempDir(), "layer.tar")

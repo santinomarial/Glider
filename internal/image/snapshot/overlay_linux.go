@@ -37,7 +37,11 @@ func NewManager(root string) (*Manager, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("create snapshot root: %w", err)
 	}
-	return &Manager{root: root}, nil
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve snapshot root: %w", err)
+	}
+	return &Manager{root: realRoot}, nil
 }
 
 // Ensure creates and mounts id's snapshot. lowerDirs are ordered base-to-top;
@@ -61,9 +65,16 @@ func (m *Manager) Ensure(id string, lowerDirs []string) (Snapshot, error) {
 		}
 		clean[i] = filepath.Clean(dir)
 	}
-	if mounted, err := isMountpoint(s.Merged); err != nil {
+	if mounted, fsType, err := mountpoint(s.Merged); err != nil {
 		return Snapshot{}, err
 	} else if mounted {
+		if fsType != "overlay" {
+			return Snapshot{}, fmt.Errorf("%w: %s already contains a %s mount", ErrMounted, s.Merged, fsType)
+		}
+		rec, err := loadRecord(filepath.Dir(s.Upper))
+		if err != nil || rec.ID != id || !equalStrings(rec.LowerDirs, clean) {
+			return Snapshot{}, fmt.Errorf("%w: mounted snapshot state does not match request", ErrMounted)
+		}
 		return s, nil
 	}
 	for _, dir := range []string{s.Upper, s.Work, s.Merged} {
@@ -94,7 +105,7 @@ func (m *Manager) Remove(id string) error {
 	if err != nil {
 		return err
 	}
-	mounted, err := isMountpoint(s.Merged)
+	mounted, _, err := mountpoint(s.Merged)
 	if err != nil {
 		return err
 	}
@@ -126,11 +137,14 @@ func (m *Manager) Recover(id string) (Snapshot, error) {
 	if rec.ID != id || rec.Version != 1 {
 		return Snapshot{}, fmt.Errorf("%w: corrupt snapshot record", ErrInvalidSnapshot)
 	}
-	mounted, err := isMountpoint(s.Merged)
+	mounted, fsType, err := mountpoint(s.Merged)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	if mounted {
+		if fsType != "overlay" {
+			return Snapshot{}, fmt.Errorf("%w: recorded path contains a %s mount", ErrMounted, fsType)
+		}
 		return s, nil
 	}
 	if err := m.Remove(id); err != nil {
@@ -204,19 +218,36 @@ func loadRecord(dir string) (Record, error) {
 	return rec, nil
 }
 
-func isMountpoint(target string) (bool, error) {
+func mountpoint(target string) (bool, string, error) {
 	data, err := os.ReadFile("/proc/self/mountinfo")
 	if err != nil {
-		return false, fmt.Errorf("read mountinfo: %w", err)
+		return false, "", fmt.Errorf("read mountinfo: %w", err)
 	}
 	clean := filepath.Clean(target)
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) > 4 && unescapeMount(fields[4]) == clean {
-			return true, nil
+		if len(fields) > 6 && unescapeMount(fields[4]) == clean {
+			for i, field := range fields {
+				if field == "-" && i+1 < len(fields) {
+					return true, fields[i+1], nil
+				}
+			}
+			return true, "", fmt.Errorf("malformed mountinfo entry for %s", clean)
 		}
 	}
-	return false, nil
+	return false, "", nil
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 func unescapeMount(s string) string {
 	r := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)

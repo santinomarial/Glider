@@ -271,6 +271,9 @@ func extractEntry(tr *tar.Reader, h *tar.Header, root, target string) error {
 			return err
 		}
 		source := filepath.Join(root, filepath.FromSlash(link))
+		if err := ensureParents(root, filepath.Dir(source)); err != nil {
+			return fmt.Errorf("%w: unsafe hardlink parent: %v", ErrUnsafeArchive, err)
+		}
 		info, err := os.Lstat(source)
 		if err != nil || !info.Mode().IsRegular() {
 			return fmt.Errorf("%w: hardlink target must be an existing regular file", ErrUnsafeArchive)
