@@ -71,16 +71,10 @@ Default posture: **deny by default, add back only what's justified.**
 Glider's default container does not inherit full host root capabilities
 even when the container process's UID is 0 inside its namespace.
 
-The bounding set is reduced before the workload's `execve` (runtime.md §1
-launcher/init split — the drop happens in the init process, from outside
-any capability the workload itself could otherwise try to re-acquire). The
-concrete default allow-list (expected to be close to the common
-"non-privileged container" set: e.g. `CAP_CHOWN`, `CAP_DAC_OVERRIDE`,
-`CAP_FOWNER`, `CAP_FSETID`, `CAP_KILL`, `CAP_SETGID`, `CAP_SETUID`,
-`CAP_SETPCAP`, `CAP_NET_BIND_SERVICE`, `CAP_NET_RAW`) is finalized and
-justified capability-by-capability in Phase 8, where it can be validated
-against real workloads rather than guessed here. Capabilities known to be
-excluded regardless: `CAP_SYS_ADMIN` (a well-known "root-equivalent grab
+The workload trampoline reduces the bounding set before the workload's
+`execve`, from outside any capability the workload could try to re-acquire.
+The concrete allowlist is documented in §7. Capabilities excluded include
+`CAP_SYS_ADMIN` (a well-known "root-equivalent grab
 bag" — mount, namespace, and other operations), `CAP_SYS_MODULE`,
 `CAP_SYS_BOOT`, `CAP_SYS_PTRACE` (host-process tracing), `CAP_SYS_RAWIO`,
 `CAP_NET_ADMIN`.
@@ -93,7 +87,7 @@ in-container process.
 
 ## 4. no_new_privs
 
-`PR_SET_NO_NEW_PRIVS` is set in the container init before `execve` of the
+`PR_SET_NO_NEW_PRIVS` is set in the workload trampoline before `execve` of the
 workload (runtime.md §4 sequence, immediately prior to the final exec).
 This guarantees `execve` cannot grant new privileges via `setuid`/`setgid`
 binaries or file capabilities inside the container, closing the specific
@@ -116,10 +110,8 @@ each tied to the escape/attack pattern it closes:
 | Namespace manipulation | `unshare`, `setns` (workload does not need to create or join namespaces itself) | prevents a workload from constructing its own namespace escape path |
 | Raw privileged interfaces | `bpf`, `perf_event_open`, `kexec_file_load`, `open_by_handle_at` | broad kernel-internal access with a history of privilege-escalation bugs |
 
-This table is the starting design; the finalized profile, with per-syscall
-justification and the actual seccomp-bpf construction, is a Phase 8
-deliverable — table entries here are the threat-model categories driving
-that work, not a claim that the filter already exists.
+The implemented filter follows these categories; §7 states its exact initial
+coverage and deliberate compatibility choices.
 
 ## 6. Validation
 

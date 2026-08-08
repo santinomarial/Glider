@@ -19,6 +19,8 @@
 # Docker complexity unless required".
 set -euo pipefail
 
+export GLIDER_REQUIRE_PRIVILEGED_TESTS=1
+
 DOCKER_IMAGE="golang:1.26"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

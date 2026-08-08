@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+func TestVerifyProcessRoot(t *testing.T) {
+	ok,err:=VerifyProcessRoot(os.Getpid(),"/");if err!=nil||!ok{t.Fatalf("self root: ok=%v err=%v",ok,err)}
+	ok,err=VerifyProcessRoot(os.Getpid(),t.TempDir());if err!=nil{t.Fatal(err)};if ok{t.Fatal("unrelated directory matched process root")}
+}
+
 // statLine builds a synthetic /proc/<pid>/stat line. afterComm supplies the
 // fields from "state" (field 3) through at least "starttime" (field 22);
 // extra trailing fields are appended to mimic the real file's length.
