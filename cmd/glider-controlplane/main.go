@@ -43,6 +43,8 @@ func main() {
 	etcdCA := flag.String("etcd-ca", "", "etcd server CA certificate")
 	etcdServerName := flag.String("etcd-tls-server-name", "", "expected etcd certificate name")
 	insecureEtcd := flag.Bool("insecure-etcd", false, "disable etcd TLS (development only)")
+	requestRate := flag.Int("request-rate", 50, "allowed requests per second per authenticated principal")
+	requestBurst := flag.Int("request-burst", 100, "request burst per authenticated principal")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -84,7 +86,8 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		serverOptions = append(serverOptions, grpc.Creds(credentials), grpc.UnaryInterceptor(transport.UnaryAuthorizationInterceptor()))
+		limiter := transport.NewRateLimiter(*requestRate, *requestBurst)
+		serverOptions = append(serverOptions, grpc.Creds(credentials), grpc.ChainUnaryInterceptor(transport.UnaryAuthorizationInterceptor(), limiter.UnaryInterceptor()))
 	}
 	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(1<<20), grpc.MaxSendMsgSize(4<<20), grpc.MaxConcurrentStreams(256))
 	server := grpc.NewServer(serverOptions...)

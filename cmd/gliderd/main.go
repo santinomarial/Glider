@@ -101,7 +101,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		server := grpc.NewServer(grpc.Creds(creds), grpc.UnaryInterceptor(transport.UnaryAuthorizationInterceptor()))
+		server := grpc.NewServer(grpc.Creds(creds), grpc.ChainUnaryInterceptor(transport.UnaryAuthorizationInterceptor(), transport.NewRateLimiter(20, 40).UnaryInterceptor()))
 		nodeops.Register(server, operations)
 		go func() { <-ctx.Done(); server.GracefulStop() }()
 		go func() {
