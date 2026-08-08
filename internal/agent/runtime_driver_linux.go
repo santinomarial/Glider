@@ -4,7 +4,6 @@ package agent
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -101,11 +100,6 @@ func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*Run
 		return nil, err
 	}
 	return &RuntimeDriver{dataRoot: dataRoot, stateRoot: filepath.Join(dataRoot, "containers"), images: images, network: network, startTimeout: 30 * time.Second}, nil
-}
-
-func containerID(a api.Assignment) string {
-	sum := sha256.Sum256([]byte(a.TaskID))
-	return fmt.Sprintf("%x-g%d", sum[:10], a.Generation)
 }
 
 func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed, error) {
