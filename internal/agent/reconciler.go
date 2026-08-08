@@ -55,7 +55,7 @@ func New(root string, driver Driver) (*Reconciler, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &Reconciler{root, driver}, nil
+	return &Reconciler{root: root, driver: driver}, nil
 }
 
 // Reconcile is a full level-triggered pass. Event watches only wake this

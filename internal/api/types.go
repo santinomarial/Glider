@@ -150,17 +150,17 @@ type TaskStatus struct {
 }
 
 type Assignment struct {
-	APIVersion string    `json:"apiVersion"`
-	Metadata   Metadata  `json:"metadata"`
-	TaskID     string    `json:"task_id"`
-	WorkloadID string    `json:"workload_id"`
-	NodeID     string    `json:"node_id"`
-	Generation int64     `json:"generation"`
-	Resources  Resources `json:"resources"`
-	Image      string    `json:"image"`
-	Command    []string  `json:"command,omitempty"`
+	APIVersion    string        `json:"apiVersion"`
+	Metadata      Metadata      `json:"metadata"`
+	TaskID        string        `json:"task_id"`
+	WorkloadID    string        `json:"workload_id"`
+	NodeID        string        `json:"node_id"`
+	Generation    int64         `json:"generation"`
+	Resources     Resources     `json:"resources"`
+	Image         string        `json:"image"`
+	Command       []string      `json:"command,omitempty"`
 	RestartPolicy RestartPolicy `json:"restart_policy,omitempty"`
-	Health HealthSpec `json:"health,omitempty"`
-	HostPorts  []uint16  `json:"host_ports,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	Health        HealthSpec    `json:"health,omitempty"`
+	HostPorts     []uint16      `json:"host_ports,omitempty"`
+	CreatedAt     time.Time     `json:"created_at"`
 }

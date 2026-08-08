@@ -39,7 +39,16 @@ func TestPublishedPortConflictAcrossEndpoints(t *testing.T) {
 	}
 }
 
-func TestValidateOverlayPeers(t *testing.T){valid:=[]Peer{{NodeID:"node-b",PodCIDR:netip.MustParsePrefix("10.64.2.0/24"),TunnelAddress:netip.MustParseAddr("192.0.2.2")}};if err:=validateOverlayPeers(valid);err!=nil{t.Fatal(err)};duplicates:=append(valid,Peer{NodeID:"node-c",PodCIDR:valid[0].PodCIDR,TunnelAddress:netip.MustParseAddr("192.0.2.3")});if err:=validateOverlayPeers(duplicates);err==nil{t.Fatal("accepted duplicate subnet")}}
+func TestValidateOverlayPeers(t *testing.T) {
+	valid := []Peer{{NodeID: "node-b", PodCIDR: netip.MustParsePrefix("10.64.2.0/24"), TunnelAddress: netip.MustParseAddr("192.0.2.2")}}
+	if err := validateOverlayPeers(valid); err != nil {
+		t.Fatal(err)
+	}
+	duplicates := append(valid, Peer{NodeID: "node-c", PodCIDR: valid[0].PodCIDR, TunnelAddress: netip.MustParseAddr("192.0.2.3")})
+	if err := validateOverlayPeers(duplicates); err == nil {
+		t.Fatal("accepted duplicate subnet")
+	}
+}
 func TestValidatePorts(t *testing.T) {
 	if err := validatePorts([]PortMapping{{Protocol: "tcp", HostPort: 8080, ContainerPort: 80}, {Protocol: "udp", HostPort: 5353, ContainerPort: 53}}); err != nil {
 		t.Fatal(err)

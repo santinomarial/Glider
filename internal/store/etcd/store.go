@@ -196,21 +196,61 @@ func (s *Store) DeleteTask(ctx context.Context, id string, expected int64) error
 	}
 	return nil
 }
+
 // EvictNodeAssignments generation-safely returns tasks to PENDING while
 // releasing reservations. Each assignment is an independent CAS transaction;
 // conflicts are left for the next level-triggered monitor pass.
 func (s *Store) EvictNodeAssignments(ctx context.Context, nodeID string) error {
-	assignments, err := s.ListAssignments(ctx); if err != nil { return err }
+	assignments, err := s.ListAssignments(ctx)
+	if err != nil {
+		return err
+	}
 	for _, assignment := range assignments {
-		if assignment.NodeID != nodeID { continue }
-		task, err := s.GetTask(ctx, assignment.TaskID); if err != nil { continue }; taskRevision := task.Metadata.Revision
-		nodeKV, err := getOne(ctx,s.client,s.key("nodes",nodeID)); if err != nil { return err }; var node api.Node; if err:=json.Unmarshal(nodeKV.Value,&node);err!=nil{return err}
-		assignmentKV,err:=getOne(ctx,s.client,s.key("assignments",assignment.TaskID));if err!=nil{continue};var current api.Assignment;if err:=json.Unmarshal(assignmentKV.Value,&current);err!=nil{return err}
-		if current.Generation!=assignment.Generation||task.Status.AssignmentGeneration!=assignment.Generation{continue}
-		node.Status.Reserved=node.Status.Reserved.Sub(assignment.Resources);if node.Status.Reserved.CPUMilli<0||node.Status.Reserved.MemoryBytes<0{return errors.New("corrupt negative node reservation")};node.Metadata.Revision=0
-		task.Status.Phase=api.TaskPending;task.Status.NodeID="";task.Status.Ready=false;task.Metadata.Revision=0
-		nodeData,_:=json.Marshal(node);taskData,_:=json.Marshal(task)
-		resp,err:=s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks",task.Metadata.ID)),"=",taskRevision),clientv3.Compare(clientv3.ModRevision(s.key("nodes",nodeID)),"=",nodeKV.ModRevision),clientv3.Compare(clientv3.ModRevision(s.key("assignments",assignment.TaskID)),"=",assignmentKV.ModRevision)).Then(clientv3.OpPut(s.key("tasks",task.Metadata.ID),string(taskData)),clientv3.OpPut(s.key("nodes",nodeID),string(nodeData)),clientv3.OpDelete(s.key("assignments",assignment.TaskID))).Commit();if err!=nil{return err};if !resp.Succeeded{continue}
+		if assignment.NodeID != nodeID {
+			continue
+		}
+		task, err := s.GetTask(ctx, assignment.TaskID)
+		if err != nil {
+			continue
+		}
+		taskRevision := task.Metadata.Revision
+		nodeKV, err := getOne(ctx, s.client, s.key("nodes", nodeID))
+		if err != nil {
+			return err
+		}
+		var node api.Node
+		if err := json.Unmarshal(nodeKV.Value, &node); err != nil {
+			return err
+		}
+		assignmentKV, err := getOne(ctx, s.client, s.key("assignments", assignment.TaskID))
+		if err != nil {
+			continue
+		}
+		var current api.Assignment
+		if err := json.Unmarshal(assignmentKV.Value, &current); err != nil {
+			return err
+		}
+		if current.Generation != assignment.Generation || task.Status.AssignmentGeneration != assignment.Generation {
+			continue
+		}
+		node.Status.Reserved = node.Status.Reserved.Sub(assignment.Resources)
+		if node.Status.Reserved.CPUMilli < 0 || node.Status.Reserved.MemoryBytes < 0 {
+			return errors.New("corrupt negative node reservation")
+		}
+		node.Metadata.Revision = 0
+		task.Status.Phase = api.TaskPending
+		task.Status.NodeID = ""
+		task.Status.Ready = false
+		task.Metadata.Revision = 0
+		nodeData, _ := json.Marshal(node)
+		taskData, _ := json.Marshal(task)
+		resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks", task.Metadata.ID)), "=", taskRevision), clientv3.Compare(clientv3.ModRevision(s.key("nodes", nodeID)), "=", nodeKV.ModRevision), clientv3.Compare(clientv3.ModRevision(s.key("assignments", assignment.TaskID)), "=", assignmentKV.ModRevision)).Then(clientv3.OpPut(s.key("tasks", task.Metadata.ID), string(taskData)), clientv3.OpPut(s.key("nodes", nodeID), string(nodeData)), clientv3.OpDelete(s.key("assignments", assignment.TaskID))).Commit()
+		if err != nil {
+			return err
+		}
+		if !resp.Succeeded {
+			continue
+		}
 	}
 	return nil
 }
@@ -307,7 +347,7 @@ func (s *Store) Bind(ctx context.Context, r storeapi.BindRequest) (api.Assignmen
 		return api.Assignment{}, storeapi.ErrInsufficientCapacity
 	}
 	gen := task.Metadata.Generation + 1
-	assignment := api.Assignment{APIVersion: api.Version, Metadata: api.Metadata{ID: task.Metadata.ID + "/" + fmt.Sprint(gen), Generation: gen}, TaskID: task.Metadata.ID, WorkloadID: task.Spec.WorkloadID, NodeID: node.Metadata.ID, Generation: gen, Resources: task.Spec.Resources, Image: task.Spec.Image, Command: append([]string(nil), task.Spec.Command...), RestartPolicy:task.Spec.RestartPolicy, Health:task.Spec.Health, HostPorts: append([]uint16(nil), task.Spec.HostPorts...), CreatedAt: time.Now().UTC()}
+	assignment := api.Assignment{APIVersion: api.Version, Metadata: api.Metadata{ID: task.Metadata.ID + "/" + fmt.Sprint(gen), Generation: gen}, TaskID: task.Metadata.ID, WorkloadID: task.Spec.WorkloadID, NodeID: node.Metadata.ID, Generation: gen, Resources: task.Spec.Resources, Image: task.Spec.Image, Command: append([]string(nil), task.Spec.Command...), RestartPolicy: task.Spec.RestartPolicy, Health: task.Spec.Health, HostPorts: append([]uint16(nil), task.Spec.HostPorts...), CreatedAt: time.Now().UTC()}
 	task.Status.Phase = api.TaskScheduled
 	task.Status.NodeID = node.Metadata.ID
 	task.Status.AssignmentGeneration = gen
