@@ -13,9 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/santinomarial/glider/internal/agent"
+	"github.com/santinomarial/glider/internal/lease"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 )
 
@@ -23,6 +25,7 @@ func main() {
 	var endpoints string
 	var nodeID, clusterID, dataRoot, networkCIDR string
 	var resync time.Duration
+	var leaseTTL, selfFence time.Duration
 	var insecure bool
 	flag.StringVar(&endpoints, "etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	flag.StringVar(&nodeID, "node-id", "", "this node's stable ID (required)")
@@ -30,6 +33,8 @@ func main() {
 	flag.StringVar(&dataRoot, "data-dir", "/var/lib/glider", "durable node data root")
 	flag.StringVar(&networkCIDR, "network-cidr", "10.64.0.0/24", "node-local container subnet")
 	flag.DurationVar(&resync, "resync", 30*time.Second, "full reconciliation interval")
+	flag.DurationVar(&leaseTTL, "lease-ttl", 10*time.Second, "node lease TTL")
+	flag.DurationVar(&selfFence, "self-fence-after", 25*time.Second, "maximum unproven lease duration before stopping workloads")
 	flag.BoolVar(&insecure, "insecure-registry", false, "allow development registries over HTTP")
 	flag.Parse()
 	if nodeID == "" {
@@ -59,9 +64,14 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if err := daemon.Run(ctx); err != nil && ctx.Err() == nil {
-		fatal(err)
-	}
+	leaseManager, err := lease.New(client, clusterID, nodeID, uuid.NewString(), leaseTTL, selfFence)
+	if err != nil { fatal(err) }
+	runCtx, cancelRun := context.WithCancel(ctx); defer cancelRun()
+	errs := make(chan error, 2)
+	go func(){ errs <- daemon.Run(runCtx) }()
+	go func(){ errs <- leaseManager.Run(ctx, func(context.Context) error { cancelRun(); fenceCtx,cancel:=context.WithTimeout(context.Background(),selfFence);defer cancel();return reconciler.Reconcile(fenceCtx,nil) }) }()
+	err = <-errs; cancelRun()
+	if err != nil && ctx.Err() == nil { fatal(err) }
 }
 func split(value string) []string {
 	var out []string
