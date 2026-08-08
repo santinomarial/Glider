@@ -11,13 +11,17 @@ import (
 
 type fakeStore struct{ values []api.Assignment }
 
-func (f fakeStore) ListAssignments(context.Context) ([]api.Assignment, error) { return f.values, nil }
+func (f fakeStore) ListAssignments(context.Context) ([]api.Assignment, error)  { return f.values, nil }
+func (f fakeStore) PutEvent(_ context.Context, e api.Event) (api.Event, error) { return e, nil }
 
 type fakeRuntime struct{}
 
 func (fakeRuntime) Logs(api.Assignment, int64) ([]byte, error) { return []byte("hello"), nil }
 func (fakeRuntime) Stats(api.Assignment) (cgroup.Stats, error) {
 	return cgroup.Stats{Memory: cgroup.MemoryStats{CurrentBytes: 42}}, nil
+}
+func (fakeRuntime) Exec(context.Context, api.Assignment, []string) ([]byte, int, error) {
+	return []byte("ok"), 0, nil
 }
 func request(task string, generation float64) *structpb.Struct {
 	v, _ := structpb.NewStruct(map[string]any{"task_id": task, "generation": generation})

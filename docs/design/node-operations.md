@@ -14,6 +14,13 @@ client. The node endpoint permits only `operator` and `admin` certificate
 roles.
 
 Nodes advertise `spec.operations_address`. Operators may override discovery
-with the CLI's `--node-endpoint` flag for maintenance. Interactive exec and
-true follow-mode log streaming remain blocking work; this milestone does not
-claim that the complete node-operations production gate is closed.
+with the CLI's `--node-endpoint` flag for maintenance. Non-interactive exec
+validates the live init PID identity, enters its IPC/UTS/network/mount/PID
+namespaces, chroots through an already-open root descriptor, reapplies
+`no_new_privs`, capability reduction, and seccomp, then forks the requested
+command. Commands are bounded to one hour and 4 MiB output and every attempt is
+recorded as a durable audit event with principal and assignment generation.
+
+Interactive TTY exec and true follow-mode log streaming remain blocking work;
+this milestone does not claim that the complete node-operations production
+gate is closed.

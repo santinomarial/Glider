@@ -35,6 +35,7 @@ func main() {
 	var etcdTLSCert, etcdTLSKey, etcdCA, etcdServerName string
 	var insecureEtcd bool
 	var operationsListen, tlsCert, tlsKey, clientCA string
+	var execHelper string
 	flag.StringVar(&endpoints, "etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	flag.StringVar(&nodeID, "node-id", "", "this node's stable ID (required)")
 	flag.StringVar(&clusterID, "cluster-id", "default", "Glider cluster ID")
@@ -53,6 +54,7 @@ func main() {
 	flag.StringVar(&tlsCert, "tls-cert", "", "node server TLS certificate")
 	flag.StringVar(&tlsKey, "tls-key", "", "node server TLS private key")
 	flag.StringVar(&clientCA, "client-ca", "", "CA used to authenticate operations clients")
+	flag.StringVar(&execHelper, "exec-helper", "/usr/libexec/glider-exec", "absolute path to hardened exec helper")
 	flag.Parse()
 	if nodeID == "" {
 		fmt.Fprintln(os.Stderr, "gliderd: --node-id is required")
@@ -81,6 +83,9 @@ func main() {
 	}
 	driver, err := agent.NewRuntimeDriver(dataRoot, networkCIDR, insecure)
 	if err != nil {
+		fatal(err)
+	}
+	if err := driver.SetExecHelper(execHelper); err != nil {
 		fatal(err)
 	}
 	if operationsListen != "" {

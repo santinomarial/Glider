@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -35,6 +37,7 @@ type RuntimeDriver struct {
 	images       *imagemanager.Manager
 	network      *containernetwork.Manager
 	startTimeout time.Duration
+	execHelper   string
 }
 
 const maxLogBytes = 64 << 20
@@ -142,7 +145,61 @@ func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*Run
 	if err != nil {
 		return nil, err
 	}
-	return &RuntimeDriver{dataRoot: dataRoot, stateRoot: filepath.Join(dataRoot, "containers"), images: images, network: network, startTimeout: 30 * time.Second}, nil
+	return &RuntimeDriver{dataRoot: dataRoot, stateRoot: filepath.Join(dataRoot, "containers"), images: images, network: network, startTimeout: 30 * time.Second, execHelper: "/usr/libexec/glider-exec"}, nil
+}
+func (d *RuntimeDriver) SetExecHelper(path string) error {
+	if !filepath.IsAbs(path) {
+		return errors.New("exec helper path must be absolute")
+	}
+	d.execHelper = path
+	return nil
+}
+func (d *RuntimeDriver) Exec(ctx context.Context, a api.Assignment, command []string) ([]byte, int, error) {
+	if len(command) == 0 {
+		return nil, 0, errors.New("command is required")
+	}
+	rec, err := processstate.Load(processstate.Dir(d.stateRoot, containerID(a)))
+	if err != nil {
+		return nil, 0, err
+	}
+	alive, err := process.ValidateProcessIdentity(process.ProcessIdentity{PID: rec.InitPID, StartTime: rec.InitStartTime})
+	if err != nil || !alive {
+		if err == nil {
+			err = errors.New("container init is not alive")
+		}
+		return nil, 0, err
+	}
+	args := append([]string{"--pid", fmt.Sprint(rec.InitPID)}, command...)
+	cmd := exec.CommandContext(ctx, d.execHelper, args...)
+	output := &limitedBuffer{limit: 4 << 20}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	err = cmd.Run()
+	code := 0
+	if exit, ok := err.(*exec.ExitError); ok {
+		code = exit.ExitCode()
+		err = nil
+	} else if err != nil {
+		return output.Bytes(), 0, err
+	}
+	return output.Bytes(), code, nil
+}
+
+type limitedBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+func (w *limitedBuffer) Write(p []byte) (int, error) {
+	original := len(p)
+	remaining := w.limit - w.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			p = p[:remaining]
+		}
+		_, _ = w.Buffer.Write(p)
+	}
+	return original, nil
 }
 
 func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed, error) {

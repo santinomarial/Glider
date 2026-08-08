@@ -164,7 +164,35 @@ func run(ctx context.Context, c client, args []string) error {
 		}
 		return pretty(result)
 	case "exec":
-		return errors.New("exec transport is not implemented yet")
+		if len(args) < 3 {
+			return errors.New("usage: glider exec TASK -- COMMAND [ARG...]")
+		}
+		command := args[2:]
+		if command[0] == "--" {
+			command = command[1:]
+		}
+		if len(command) == 0 {
+			return errors.New("exec command is required")
+		}
+		values := make([]any, len(command))
+		for i, value := range command {
+			values[i] = value
+		}
+		result, err := c.nodeCall(ctx, "Exec", args[1], map[string]any{"command": values, "timeout_seconds": 30})
+		if err != nil {
+			return err
+		}
+		encoded, _ := result["data_base64"].(string)
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return err
+		}
+		_, _ = os.Stdout.Write(data)
+		code, _ := result["exit_code"].(float64)
+		if code != 0 {
+			return fmt.Errorf("remote command exited with code %d", int(code))
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

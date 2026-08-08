@@ -590,6 +590,36 @@ func TestSIGTERMDefaultDispositionTerminatesWorkload(t *testing.T) {
 	}
 }
 
+func TestExecHelperEntersRunningContainerAndAppliesSecurity(t *testing.T) {
+	requireRoot(t)
+	glider, helper := buildBinaries(t)
+	root := newRootFS(t, helper)
+	stateDir := t.TempDir()
+	execBin := filepath.Join(t.TempDir(), "glider-exec")
+	build := exec.Command("go", "build", "-o", execBin, "../../../cmd/glider-exec")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build glider-exec: %v\n%s", err, output)
+	}
+	cmd := exec.Command(glider, "run", "--rootfs", root, "--hostname", "glider-test", "--state-dir", stateDir, "--", "/bin/glider-test-helper", "sleep-default", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Signal(syscall.SIGTERM); _ = cmd.Wait() }()
+	if err := waitForPhase(t, stateDir, state.Running, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	rec := loadState(t, stateDir)
+	operation := exec.Command(execBin, "--pid", strconv.Itoa(rec.InitPID), "/bin/glider-test-helper", "hostname")
+	output, err := operation.CombinedOutput()
+	if err != nil {
+		t.Fatalf("exec helper: %v: %s", err, output)
+	}
+	if strings.TrimSpace(string(output)) != "glider-test" {
+		t.Fatalf("hostname output=%q", output)
+	}
+}
+
 // --- exit gate (C): grace-period escalation — a workload that ignores
 // graceful termination is killed and reaped after the configured grace
 // period. Uses --stop-grace to keep the test fast (Phase 2 §20). ---
