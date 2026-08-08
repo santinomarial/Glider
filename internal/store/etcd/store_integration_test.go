@@ -84,6 +84,8 @@ func TestDeleteAssignedTaskAtomicallyReleasesReservation(t *testing.T) {
 	}
 }
 
+func TestEvictUnreachableNodeRequeuesWithNewGeneration(t *testing.T){client:=startEtcd(t);s,_:=New(client,"evict-cluster");ctx:=context.Background();task,_:=s.PutTask(ctx,api.Task{Metadata:api.Metadata{ID:"task"},Spec:api.TaskSpec{Resources:api.Resources{CPUMilli:400}},Status:api.TaskStatus{Phase:api.TaskPending}},0);a,_:=s.PutNode(ctx,readyNode("a"),0);b,_:=s.PutNode(ctx,readyNode("b"),0);first,err:=s.Bind(ctx,storeapi.BindRequest{TaskID:"task",TaskRevision:task.Metadata.Revision,NodeID:"a",NodeRevision:a.Metadata.Revision});if err!=nil{t.Fatal(err)};if err:=s.EvictNodeAssignments(ctx,"a");err!=nil{t.Fatal(err)};pending,_:=s.GetTask(ctx,"task");if pending.Status.Phase!=api.TaskPending||pending.Metadata.Generation!=first.Generation{t.Fatalf("pending=%+v",pending)};nodes,_:=s.ListNodes(ctx);var nodeB api.Node;for _,node:=range nodes{if node.Metadata.ID=="b"{nodeB=node}};second,err:=s.Bind(ctx,storeapi.BindRequest{TaskID:"task",TaskRevision:pending.Metadata.Revision,NodeID:"b",NodeRevision:nodeB.Metadata.Revision});if err!=nil{t.Fatal(err)};if second.Generation<=first.Generation{t.Fatalf("generation did not advance: %d -> %d",first.Generation,second.Generation)}}
+
 func readyNode(id string) api.Node {
 	return api.Node{Metadata: api.Metadata{ID: id}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}}
 }
