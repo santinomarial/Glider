@@ -45,12 +45,13 @@ type Node struct {
 	Status     NodeStatus `json:"status"`
 }
 type NodeSpec struct {
-	Unschedulable  bool              `json:"unschedulable"`
-	Labels         map[string]string `json:"labels,omitempty"`
-	Capacity       Resources         `json:"capacity"`
-	SystemReserved Resources         `json:"system_reserved"`
-	PodCIDR        string            `json:"pod_cidr,omitempty"`
-	TunnelAddress  string            `json:"tunnel_address,omitempty"`
+	Unschedulable     bool              `json:"unschedulable"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	Capacity          Resources         `json:"capacity"`
+	SystemReserved    Resources         `json:"system_reserved"`
+	PodCIDR           string            `json:"pod_cidr,omitempty"`
+	TunnelAddress     string            `json:"tunnel_address,omitempty"`
+	OperationsAddress string            `json:"operations_address,omitempty"`
 }
 
 type RestartPolicy string

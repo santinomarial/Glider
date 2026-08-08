@@ -124,6 +124,9 @@ func authorized(roles map[string]bool, method string) bool {
 	if roles["admin"] {
 		return true
 	}
+	if strings.Contains(method, ".NodeOperations/") {
+		return roles["operator"]
+	}
 	name := method[strings.LastIndex(method, "/")+1:]
 	read := strings.HasPrefix(name, "List") || strings.HasPrefix(name, "Get")
 	if roles["viewer"] && read {

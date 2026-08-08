@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -18,6 +19,7 @@ import (
 	"github.com/santinomarial/glider/internal/api"
 	healthcheck "github.com/santinomarial/glider/internal/health"
 	imagemanager "github.com/santinomarial/glider/internal/image/manager"
+	"github.com/santinomarial/glider/internal/logfile"
 	containernetwork "github.com/santinomarial/glider/internal/network"
 	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/process"
@@ -34,6 +36,8 @@ type RuntimeDriver struct {
 	network      *containernetwork.Manager
 	startTimeout time.Duration
 }
+
+const maxLogBytes = 64 << 20
 
 func (d *RuntimeDriver) EnsureOverlay(localTunnel string, peers []api.Node, mtu int) error {
 	local, err := netip.ParseAddr(localTunnel)
@@ -95,6 +99,37 @@ func (d *RuntimeDriver) EndpointAddress(a api.Assignment) (string, error) {
 	return endpoint.Address.String(), nil
 }
 
+func (d *RuntimeDriver) Logs(a api.Assignment, tailBytes int64) ([]byte, error) {
+	if tailBytes <= 0 || tailBytes > 4<<20 {
+		return nil, errors.New("tail_bytes must be between 1 and 4194304")
+	}
+	path := filepath.Join(d.dataRoot, "logs", containerID(a)+".log")
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	offset := info.Size() - tailBytes
+	if offset < 0 {
+		offset = 0
+	}
+	if _, err = file.Seek(offset, 0); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(io.LimitReader(file, tailBytes))
+}
+func (d *RuntimeDriver) Stats(a api.Assignment) (cgroup.Stats, error) {
+	manager, err := cgroup.NewManager()
+	if err != nil {
+		return cgroup.Stats{}, err
+	}
+	return manager.Stats(containerID(a))
+}
+
 func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*RuntimeDriver, error) {
 	if dataRoot == "" || !filepath.IsAbs(dataRoot) {
 		return nil, errors.New("data root must be absolute")
@@ -144,13 +179,18 @@ func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed,
 	if err := containernetwork.ConfigureDNS(prepared.RootFS, containernetwork.HostNameservers()); err != nil {
 		return Observed{}, err
 	}
-	cfg := process.Config{RootFS: prepared.RootFS, Argv: argv, Hostname: a.TaskID, StateDir: d.stateRoot, ContainerID: id, Env: append([]string(nil), prepared.Image.Config.Env...), WorkingDir: prepared.Image.Config.WorkingDir, Resources: cgroup.Resources{CPUCores: float64(a.Resources.CPUMilli) / 1000, MemoryBytes: a.Resources.MemoryBytes}}
+	logDir := filepath.Join(d.dataRoot, "logs")
+	logFile, err := logfile.New(filepath.Join(logDir, id+".log"), maxLogBytes, 3)
+	if err != nil {
+		return Observed{}, err
+	}
+	cfg := process.Config{RootFS: prepared.RootFS, Argv: argv, Hostname: a.TaskID, StateDir: d.stateRoot, ContainerID: id, Env: append([]string(nil), prepared.Image.Config.Env...), WorkingDir: prepared.Image.Config.WorkingDir, Resources: cgroup.Resources{CPUCores: float64(a.Resources.CPUMilli) / 1000, MemoryBytes: a.Resources.MemoryBytes}, Stdout: logFile, Stderr: logFile}
 	cfg.ConfigureNetwork = func(pid int) error {
 		_, err := d.network.EnsureWithPorts(context.Background(), id, pid, ports)
 		return err
 	}
 	stop := make(chan os.Signal, 1)
-	go func() { _, _ = process.Run(stop, cfg) }()
+	go func() { defer logFile.Close(); _, _ = process.Run(stop, cfg) }()
 	deadline := time.NewTimer(d.startTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(25 * time.Millisecond)

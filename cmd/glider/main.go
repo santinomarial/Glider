@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -20,7 +21,11 @@ import (
 
 const service = "glider.v1.ControlPlane"
 
-type client struct{ conn *grpc.ClientConn }
+type client struct {
+	conn         *grpc.ClientConn
+	transport    credentials.TransportCredentials
+	nodeEndpoint string
+}
 
 func (c client) call(ctx context.Context, method string, input any) (map[string]any, error) {
 	data, err := json.Marshal(input)
@@ -46,6 +51,7 @@ func main() {
 	tlsKey := flag.String("tls-key", env("GLIDER_TLS_KEY", ""), "client TLS private key")
 	caFile := flag.String("ca", env("GLIDER_CA", ""), "control-plane CA certificate")
 	serverName := flag.String("tls-server-name", env("GLIDER_TLS_SERVER_NAME", ""), "expected control-plane certificate name")
+	nodeEndpoint := flag.String("node-endpoint", "", "override node operations address")
 	insecureDevelopment := flag.Bool("insecure-development", false, "disable TLS verification (development only)")
 	flag.Parse()
 	if flag.NArg() == 0 {
@@ -68,7 +74,7 @@ func main() {
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	c := client{conn}
+	c := client{conn: conn, transport: transportCredentials, nodeEndpoint: *nodeEndpoint}
 	if err := run(ctx, c, flag.Args()); err != nil {
 		fatal(err)
 	}
@@ -133,11 +139,82 @@ func run(ctx context.Context, c client, args []string) error {
 			return errors.New("usage: glider inspect task|workload|service ID")
 		}
 		return inspect(ctx, c, args[1], args[2])
-	case "logs", "exec", "stats":
-		return fmt.Errorf("%s requires the node streaming API, which is not available in this release", args[0])
+	case "logs":
+		if len(args) != 2 {
+			return errors.New("usage: glider logs TASK")
+		}
+		result, err := c.nodeCall(ctx, "GetLogs", args[1], map[string]any{"tail_bytes": float64(64 << 10)})
+		if err != nil {
+			return err
+		}
+		encoded, _ := result["data_base64"].(string)
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(data)
+		return err
+	case "stats":
+		if len(args) != 2 {
+			return errors.New("usage: glider stats TASK")
+		}
+		result, err := c.nodeCall(ctx, "GetStats", args[1], nil)
+		if err != nil {
+			return err
+		}
+		return pretty(result)
+	case "exec":
+		return errors.New("exec transport is not implemented yet")
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+func (c client) nodeCall(ctx context.Context, method, taskID string, extra map[string]any) (map[string]any, error) {
+	task, err := c.call(ctx, "GetTask", map[string]any{"id": taskID})
+	if err != nil {
+		return nil, err
+	}
+	statusValue, _ := task["status"].(map[string]any)
+	generation, _ := statusValue["assignment_generation"].(float64)
+	nodeID, _ := statusValue["node_id"].(string)
+	if generation <= 0 || nodeID == "" {
+		return nil, errors.New("task has no active assignment")
+	}
+	endpoint := c.nodeEndpoint
+	if endpoint == "" {
+		nodes, err := c.call(ctx, "ListNodes", map[string]any{})
+		if err != nil {
+			return nil, err
+		}
+		values, _ := nodes["items"].([]any)
+		for _, value := range values {
+			node, _ := value.(map[string]any)
+			metadata, _ := node["metadata"].(map[string]any)
+			if metadata["id"] != nodeID {
+				continue
+			}
+			spec, _ := node["spec"].(map[string]any)
+			endpoint, _ = spec["operations_address"].(string)
+		}
+	}
+	if endpoint == "" {
+		return nil, errors.New("assigned node has no operations address")
+	}
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(c.transport.Clone()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	input := map[string]any{"task_id": taskID, "generation": generation}
+	for key, value := range extra {
+		input[key] = value
+	}
+	data, _ := structpb.NewStruct(input)
+	out := new(structpb.Struct)
+	if err = conn.Invoke(ctx, "/glider.v1.NodeOperations/"+method, data, out); err != nil {
+		return nil, err
+	}
+	return out.AsMap(), nil
 }
 func inspect(ctx context.Context, c client, kind, id string) error {
 	if kind == "task" {

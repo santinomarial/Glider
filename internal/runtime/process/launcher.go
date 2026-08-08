@@ -141,7 +141,14 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	stopGrace := cfg.stopGrace()
 
 	cmd := exec.Command("/proc/self/exe", append([]string{ReexecArg}, cfg.Argv...)...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.Stdout, cmd.Stderr = cfg.Stdout, cfg.Stderr
+	if cmd.Stdout == nil {
+		cmd.Stdout = os.Stdout
+	}
+	if cmd.Stderr == nil {
+		cmd.Stderr = os.Stderr
+	}
 	envJSON, err := json.Marshal(cfg.Env)
 	if err != nil {
 		return failLaunch(dir, &rec, fmt.Errorf("encode workload environment: %w", err))

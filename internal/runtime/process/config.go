@@ -3,6 +3,7 @@
 package process
 
 import (
+	"io"
 	"time"
 
 	"github.com/santinomarial/glider/internal/runtime/cgroup"
@@ -119,6 +120,12 @@ type Config struct {
 	// image manager prepares RootFS. Env entries use KEY=VALUE form.
 	Env        []string
 	WorkingDir string
+
+	// Stdout and Stderr receive the workload streams for its full lifetime.
+	// Nil preserves the caller's standard streams. Production agents provide
+	// append-only, size-rotated files and expose them through authenticated APIs.
+	Stdout io.Writer
+	Stderr io.Writer
 
 	// ConfigureNetwork runs after glider-init's network namespace exists and
 	// cgroup attachment succeeds, but before CREATED and before the workload
