@@ -8,11 +8,14 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **Phase 12 — transactional single-cluster orchestration**. Glider now
+Status: **Phase 16 — failure-aware multi-node workload orchestration**. Glider now
 adds bridge/veth networking, persistent IPAM, DNS, NAT and host-port
 publication; a restart-safe `gliderd` reconciliation loop; an etcd-backed
 versioned gRPC control plane; and a resource-aware scheduler whose assignment
-and reservation commit atomically. This builds on Phase 8's secured OCI image
+and reservation commit atomically; renewable node leases and self-fencing;
+VXLAN node-subnet networking; replica reconciliation and node-failure
+replacement; and distinct startup, liveness, and readiness semantics with
+bounded restart backoff. This builds on Phase 8's secured OCI image
 execution, Phase 4's cgroup v2 limits, and Phase 2's PID 1
 supervision/crash recovery, and Phase 1's Linux namespace runtime. (Phase 3's originally
 planned mount-isolation/`pivot_root` scope was completed early, inside
@@ -27,6 +30,8 @@ for the runtime's process architecture, and
 and [docs/design/security-model.md](docs/design/security-model.md) for Phase 8,
 and [docs/design/networking-control-plane.md](docs/design/networking-control-plane.md)
 for Phases 9–12.
+See [docs/design/leases-overlay-workloads-health.md](docs/design/leases-overlay-workloads-health.md)
+for Phases 13–16.
 
 Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
 run of the full unit + integration test suite (re-execs itself inside a
