@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/santinomarial/glider/internal/api"
@@ -29,26 +28,45 @@ func NewDaemon(nodeID string, source Source, r *Reconciler, resync time.Duration
 	return &Daemon{nodeID, source, r, resync}, nil
 }
 func (d *Daemon) Run(ctx context.Context) error {
-	events, err := d.source.Watch(ctx, d.nodeID)
-	if err != nil {
-		return err
-	}
 	ticker := time.NewTicker(d.resync)
 	defer ticker.Stop()
+	var events <-chan struct{}
+	retry := time.NewTimer(0)
+	defer retry.Stop()
 	for {
+		if events == nil {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-retry.C:
+			}
+			watch, err := d.source.Watch(ctx, d.nodeID)
+			if err != nil {
+				retry.Reset(time.Second)
+				continue
+			}
+			events = watch
+		}
 		desired, err := d.source.Snapshot(ctx, d.nodeID)
 		if err != nil {
-			return err
+			select {
+			case <-ctx.Done(): return ctx.Err()
+			case <-time.After(time.Second): continue
+			}
 		}
 		if err := d.reconciler.Reconcile(ctx, desired); err != nil {
-			return err
+			select {
+			case <-ctx.Done(): return ctx.Err()
+			case <-time.After(time.Second): continue
+			}
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case _, ok := <-events:
 			if !ok {
-				return errors.New("assignment watch closed")
+				events = nil
+				retry.Reset(time.Second)
 			}
 		case <-ticker.C:
 		}
