@@ -104,6 +104,9 @@ type TaskStatus struct {
 	Phase                TaskPhase `json:"phase"`
 	AssignmentGeneration int64     `json:"assignment_generation,omitempty"`
 	NodeID               string    `json:"node_id,omitempty"`
+	Ready                bool      `json:"ready"`
+	RestartCount         int       `json:"restart_count,omitempty"`
+	LastHealthTransition time.Time `json:"last_health_transition,omitempty"`
 }
 
 type Assignment struct {
