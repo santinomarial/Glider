@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,14 @@ import (
 )
 
 func main() {
+	// Minimize this process's own OS-thread footprint: under a tight
+	// pids.max (pid-hog's whole point), the Go runtime creating its own
+	// scheduler/GC threads competes for the same task-count budget as
+	// this fixture's own forked children, and Go's runtime treats a
+	// failed thread creation as an unrecoverable fatal error, not a
+	// catchable Go error — see cmdPIDHog's doc comment.
+	runtime.GOMAXPROCS(1)
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
@@ -48,6 +57,14 @@ func main() {
 		cmdZombieChurn()
 	case "orphan-churn":
 		cmdOrphanChurn()
+	case "cpu-spin":
+		cmdCPUSpin()
+	case "mem-touch-and-hold":
+		cmdMemTouchAndHold()
+	case "mem-hog":
+		cmdMemHog()
+	case "pid-hog":
+		cmdPIDHog()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
 		os.Exit(2)
@@ -307,4 +324,139 @@ func init() {
 		runOrphanChild()
 		os.Exit(0)
 	}
+}
+
+// cmdCPUSpin busy-loops on pure CPU work (no syscalls, nothing the Go
+// runtime/scheduler could satisfy by descheduling this goroutine onto an
+// idle OS thread instead of actually consuming CPU time) for the given
+// number of seconds — used to prove a configured cpu.max quota is
+// actually enforced (Phase 4 §30), via the caller reading cpu.stat's
+// nr_throttled/throttled_usec counters while this runs. GOMAXPROCS is
+// pinned to 1 so the whole process's CPU demand is deterministic and
+// doesn't itself depend on how many host CPUs are visible.
+func cmdCPUSpin() {
+	secs := 5
+	if len(os.Args) >= 3 {
+		if n, err := strconv.Atoi(os.Args[2]); err == nil {
+			secs = n
+		}
+	}
+	runtime.GOMAXPROCS(1)
+	deadline := time.Now().Add(time.Duration(secs) * time.Second)
+	var x uint64 = 1
+	for time.Now().Before(deadline) {
+		for i := 0; i < 10_000_000; i++ {
+			x = x*1103515245 + 12345
+		}
+	}
+	// Prevent the compiler from proving x is unused and eliding the loop.
+	if x == 0 {
+		fmt.Println("unreachable")
+	}
+}
+
+// cmdMemTouchAndHold allocates and touches (forces real RSS for, not just
+// a virtual mapping) sizeMiB mebibytes, then holds that allocation for
+// holdSecs seconds — a stable, non-racy window for the caller to read
+// memory.current and confirm it reflects real usage (Phase 4 §31), as
+// opposed to a workload that touches memory and immediately exits before
+// anyone can observe it.
+func cmdMemTouchAndHold() {
+	if len(os.Args) < 4 {
+		fmt.Fprintln(os.Stderr, "usage: glider-test-helper mem-touch-and-hold <size-mib> <hold-seconds>")
+		os.Exit(2)
+	}
+	sizeMiB, err := strconv.Atoi(os.Args[2])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	holdSecs, err := strconv.Atoi(os.Args[3])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+
+	buf := make([]byte, sizeMiB*1024*1024)
+	const pageSize = 4096
+	for i := 0; i < len(buf); i += pageSize {
+		buf[i] = 1
+	}
+	fmt.Println("TOUCHED")
+	time.Sleep(time.Duration(holdSecs) * time.Second)
+	_ = buf[len(buf)-1]
+}
+
+// cmdMemHog aggressively and indefinitely grows an allocation, touching
+// every page, never voluntarily stopping — used to prove a configured
+// memory.max hard-contains a genuinely runaway workload (Phase 4 §31):
+// the expectation is the kernel OOM-kills this process (SIGKILL) rather
+// than letting it grow without bound, and that the host/runtime remain
+// healthy afterward. Grows in small increments (not one giant allocation)
+// so the container is killed promptly once it crosses the configured
+// limit, rather than after one large overshoot.
+func cmdMemHog() {
+	const chunk = 4 * 1024 * 1024 // 4 MiB per step
+	const pageSize = 4096
+	var held [][]byte
+	for {
+		b := make([]byte, chunk)
+		for i := 0; i < len(b); i += pageSize {
+			b[i] = 1
+		}
+		held = append(held, b)
+	}
+}
+
+// cmdPIDHog repeatedly forks short-lived children as fast as possible for
+// the given duration, counting successes and failures, then reports
+// "SPAWNED=<n> REFUSED=<n>" — proof a configured pids.max both allows
+// forking up to the limit and refuses forks beyond it (Phase 4 §32),
+// without the container ever exceeding the configured population. Each
+// child sleeps briefly (rather than exiting instantly) so the caller has
+// a real window to observe pids.current sitting near the configured
+// limit, not just a final refusal count.
+func cmdPIDHog() {
+	secs := 3
+	if len(os.Args) >= 3 {
+		if n, err := strconv.Atoi(os.Args[2]); err == nil {
+			secs = n
+		}
+	}
+	self, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	var spawned, refused int
+	var children []*exec.Cmd
+	deadline := time.Now().Add(time.Duration(secs) * time.Second)
+	for time.Now().Before(deadline) {
+		c := exec.Command(self, "sleep-default", "2")
+		if err := c.Start(); err != nil {
+			refused++
+			time.Sleep(2 * time.Millisecond)
+			continue
+		}
+		spawned++
+		children = append(children, c)
+		// A small pace between successful forks too, not just refusals:
+		// exec.Cmd.Start (via the Go runtime's own forkAndExecInChild)
+		// can itself need to spin up a fresh OS thread as part of
+		// handling the fork/exec syscalls; slamming pids.max with a
+		// tight burst risks that thread-creation attempt itself being
+		// refused by the very same limit, which the Go runtime treats as
+		// an unrecoverable fatal error (not a catchable Start() error) —
+		// this fixture's own process is subject to the same pids.max as
+		// the children it spawns (Phase 4 §12), so it must leave itself
+		// enough headroom to keep scheduling normally right up to the
+		// limit, not just enough for the *next fork* to be refused
+		// gracefully.
+		time.Sleep(time.Millisecond)
+	}
+	for _, c := range children {
+		_ = c.Wait()
+	}
+	fmt.Printf("SPAWNED=%d REFUSED=%d\n", spawned, refused)
 }

@@ -5,9 +5,12 @@ Status: Phase 0 design, binding for Phase 1–4 implementation. Phase 2
 container's init (`glider-init`) and its workload are different processes
 — see the "Owner" column in §3 and the note under §1's table; the state
 *names* and their meanings are unchanged from this document's original
-design.
+design. Phase 4 ([cgroups.md](cgroups.md)) implements §2 invariant 2's
+"a cgroup exists" clause, which was frozen here from Phase 0 but not
+actually enforced until now.
 Related: [architecture/overview.md](../architecture/overview.md) §5 (control-plane
 Task/Assignment lifecycles, which this document is downstream of),
+[cgroups.md](cgroups.md) (Phase 4 cgroup v2 resource isolation),
 [runtime.md](runtime.md) §8 (Phase 2 implementation), [failure-model.md](failure-model.md).
 
 This document specifies the lifecycle of a single container as owned by
@@ -51,7 +54,11 @@ A container recorded as `RUNNING` implies, at the moment the invariant is
 checked:
 
 1. A state record for this exact `ContainerID` exists on disk.
-2. A cgroup exists at the container's cgroup path.
+2. A cgroup exists at the container's cgroup path (Phase 4,
+   [cgroups.md](cgroups.md) §1/§3 — the path is deterministic from
+   `ContainerID`, not read from the state record's `CgroupPath` field,
+   consistent with this section's own rule that the state file records
+   intent, `/proc`/cgroupfs is checked for fact).
 3. A network namespace exists and is attached to the container's veth
    endpoint (once Phase 9 networking lands; before that, host netns).
 4. The recorded **init** PID (`InitPID` — Phase 2, runtime.md §8.1; this is

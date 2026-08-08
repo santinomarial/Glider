@@ -2,7 +2,11 @@
 
 package process
 
-import "time"
+import (
+	"time"
+
+	"github.com/santinomarial/glider/internal/runtime/cgroup"
+)
 
 // ReexecArg is the internal re-exec entrypoint argument recognized by
 // cmd/glider-runtime's main(), matching runtime.md §1's
@@ -94,6 +98,13 @@ type Config struct {
 	// (rather than only as an env var) so Go-level callers (tests) can set
 	// it directly without shelling out.
 	StopGrace time.Duration
+
+	// Resources are the container's requested cgroup v2 resource limits
+	// (Phase 4, docs/design/cgroups.md). The zero value means no limits
+	// requested — every controller is still explicitly configured to
+	// "max" (unlimited), not merely left unset (cgroup.Resources' doc
+	// comment).
+	Resources cgroup.Resources
 }
 
 const defaultStateDir = "/var/lib/glider/containers"

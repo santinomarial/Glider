@@ -32,15 +32,15 @@ var ErrCorruptState = errors.New("corrupt container state")
 // not match SchemaVersion.
 var ErrUnsupportedVersion = errors.New("unsupported container state schema version")
 
-// SchemaVersion is the current on-disk state record format. Phase 2 does
-// not implement migration infrastructure (not needed yet — nothing has
-// shipped that requires reading an older format); Load rejects any file
-// whose version doesn't match exactly, including files with no version at
-// all (Phase 1's format), so a mismatch is a clear, loud error rather than
-// a silent misinterpretation of fields that changed meaning (e.g. Phase
-// 1's "Pid" was the workload's own PID; Phase 2's "InitPID" is not the
-// same thing — see container-lifecycle.md).
-const SchemaVersion = 2
+// SchemaVersion is the current on-disk state record format. No migration
+// infrastructure is implemented (not needed yet — nothing has shipped
+// that requires reading an older format); Load rejects any file whose
+// version doesn't match exactly, so a mismatch is a clear, loud error
+// rather than a silent misinterpretation of fields that changed meaning
+// (e.g. Phase 1's "Pid" was the workload's own PID; Phase 2's "InitPID"
+// is not the same thing; Phase 4 adds cgroup identity — see
+// container-lifecycle.md and docs/design/cgroups.md).
+const SchemaVersion = 3
 
 // Phase is a container lifecycle state, per container-lifecycle.md §1.
 type Phase string
@@ -83,6 +83,18 @@ func ValidTransition(from, to Phase) bool {
 	return false
 }
 
+// Resources mirrors cgroup.Resources' shape as a plain, dependency-free
+// value type — this package stays OS-independent (its own package doc
+// comment) and does not import the Linux-only cgroup package merely to
+// borrow a struct shape. cgroup.Resources is the single source of truth
+// for what these fields *mean* (units, "<=0 means unlimited" convention,
+// validation); this is only its durable, serializable shadow.
+type Resources struct {
+	CPUCores    float64 `json:"cpu_cores,omitempty"`
+	MemoryBytes int64   `json:"memory_bytes,omitempty"`
+	PIDsMax     int64   `json:"pids_max,omitempty"`
+}
+
 // Record is the durable, on-disk representation of one container's state.
 type Record struct {
 	SchemaVersion int    `json:"schema_version"`
@@ -117,6 +129,22 @@ type Record struct {
 	// best-effort basis and its absence is not an error.
 	WorkloadPID       int    `json:"workload_pid,omitempty"`
 	WorkloadStartTime uint64 `json:"workload_start_time,omitempty"`
+
+	// CgroupPath is the container's cgroup v2 path, relative to the
+	// discovered cgroup2 mount point (e.g. "glider/<container-id>") —
+	// Phase 4, docs/design/cgroups.md "Cgroup identity in runtime state".
+	// Recorded for observability/auditability; recovery and cleanup
+	// re-derive this path deterministically from ContainerID rather than
+	// trusting this field blindly (container-lifecycle.md's "do not treat
+	// the state file as proof" principle), since it is always
+	// reconstructible and doing so is more robust against a stale or
+	// missing value than trusting a persisted copy.
+	CgroupPath string `json:"cgroup_path,omitempty"`
+
+	// Resources is the resource limits requested for this container
+	// (Phase 4). The zero value means no limits were requested (every
+	// controller left at "max" — see cgroup.Resources's doc comment).
+	Resources Resources `json:"resources,omitempty"`
 
 	ExitCode *int `json:"exit_code,omitempty"`
 

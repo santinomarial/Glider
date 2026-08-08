@@ -8,12 +8,21 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **Phase 2 — container lifecycle, PID 1 supervision, and crash
-recovery**, on top of Phase 1's real Linux namespace runtime. See
+Status: **Phase 4 — cgroup v2 resource isolation** (CPU, memory, and PID
+limits per container), on top of Phase 2's PID 1 supervision/crash
+recovery and Phase 1's real Linux namespace runtime. (Phase 3's originally
+planned mount-isolation/`pivot_root` scope was completed early, inside
+Phase 1's exit contract — see [docs/design/cgroups.md](docs/design/cgroups.md)'s
+"Note on phase numbering".) See
 [docs/architecture/overview.md](docs/architecture/overview.md) for the
-end-to-end design and the phase plan, and
+end-to-end design and the phase plan,
 [docs/adr/0006-glider-init-pid1-supervisor.md](docs/adr/0006-glider-init-pid1-supervisor.md)
-for the current runtime architecture.
+for the runtime's process architecture, and
+[docs/design/cgroups.md](docs/design/cgroups.md) for resource isolation.
+
+Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
+run of the full unit + integration test suite (re-execs itself inside a
+container automatically on macOS/Windows).
 
 ## Documentation map
 
@@ -21,8 +30,8 @@ for the current runtime architecture.
   architecture, identifier model, control-plane state machines, design
   philosophy.
 - [`docs/design/`](docs/design/) — subsystem design docs (runtime, container
-  lifecycle, failure model, security model; more are added as their phase
-  begins).
+  lifecycle, failure model, security model, cgroups; more are added as
+  their phase begins).
 - [`docs/adr/`](docs/adr/) — architecture decision records for frozen
   decisions.
 

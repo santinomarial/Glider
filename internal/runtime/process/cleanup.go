@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/process/state"
 )
 
@@ -45,6 +46,10 @@ func cleanupContainer(rec state.Record) error {
 		return fmt.Errorf("ensure init terminated: %w", err)
 	}
 
+	if err := cleanupContainerCgroupForRecovery(rec); err != nil {
+		return fmt.Errorf("remove container cgroup: %w", err)
+	}
+
 	if rec.RootFS == "" {
 		return nil
 	}
@@ -63,6 +68,27 @@ func cleanupContainer(rec state.Record) error {
 		}
 	}
 	return nil
+}
+
+// cleanupContainerCgroupForRecovery removes rec's cgroup as part of a
+// Recover-driven DELETING pass (Phase 4 §18/§19/§38 crash-boundary
+// matrix): ensureInitTerminated has already run by the time this is
+// called, so the cgroup should already be unpopulated or close to it.
+// Unlike the normal-exit cleanup path (launcher.go's
+// cleanupContainerCgroupByName, which is purely best-effort/logged), a
+// failure here is returned as a real error — Recover's caller needs to
+// know DELETING did not actually complete, per container-lifecycle.md §4
+// ("re-run teardown" on the next attempt), not have it silently treated
+// as done.
+func cleanupContainerCgroupForRecovery(rec state.Record) error {
+	mgr, err := cgroup.NewManager()
+	if err != nil {
+		return err
+	}
+	if err := mgr.WaitUnpopulated(rec.ContainerID, cgroupCleanupTimeout); err != nil {
+		return err
+	}
+	return mgr.Remove(rec.ContainerID)
 }
 
 // ensureInitTerminated defensively confirms glider-init is gone before

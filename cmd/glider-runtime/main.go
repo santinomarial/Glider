@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/process"
 )
 
@@ -66,7 +67,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider-runtime run --rootfs <path> [--hostname <name>] -- <cmd> [args...]")
+	fmt.Fprintln(os.Stderr, "usage: glider-runtime run --rootfs <path> [--hostname <name>] [--cpus <n>] [--memory <size>] [--pids <n>] -- <cmd> [args...]")
 	fmt.Fprintln(os.Stderr, "       glider-runtime recover --state-dir <dir> <container-id>")
 }
 
@@ -76,6 +77,9 @@ func runCmd(args []string) int {
 	hostname := fs.String("hostname", "glider", "hostname to set inside the container's UTS namespace")
 	stateDir := fs.String("state-dir", "", "override the default state directory (/var/lib/glider/containers); primarily for tests")
 	stopGrace := fs.Duration("stop-grace", 0, "grace period between forwarding SIGTERM and escalating to SIGKILL (default 10s if unset or zero)")
+	cpus := fs.String("cpus", "", "fractional CPU bandwidth limit, e.g. 0.5 or 2.5 (unset = unlimited)")
+	memory := fs.String("memory", "", "hard memory limit, e.g. 256Mi or 1Gi or a raw byte count (unset = unlimited)")
+	pids := fs.String("pids", "", "maximum tasks (processes+threads) in the container, including glider-init itself (unset = unlimited)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -92,6 +96,32 @@ func runCmd(args []string) int {
 		return 2
 	}
 
+	var resources cgroup.Resources
+	if *cpus != "" {
+		v, err := cgroup.ParseCPUCores(*cpus)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime:", err)
+			return 2
+		}
+		resources.CPUCores = v
+	}
+	if *memory != "" {
+		v, err := cgroup.ParseMemoryBytes(*memory)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime:", err)
+			return 2
+		}
+		resources.MemoryBytes = v
+	}
+	if *pids != "" {
+		v, err := cgroup.ParsePIDsMax(*pids)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "glider-runtime:", err)
+			return 2
+		}
+		resources.PIDsMax = v
+	}
+
 	id, err := process.NewContainerID()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "glider-runtime:", err)
@@ -105,6 +135,7 @@ func runCmd(args []string) int {
 		StateDir:    *stateDir,
 		ContainerID: id,
 		StopGrace:   *stopGrace,
+		Resources:   resources,
 	}
 
 	// SIGTERM/SIGINT delivered to glider-runtime itself (e.g. an operator

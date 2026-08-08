@@ -10,22 +10,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/namespace"
 	"github.com/santinomarial/glider/internal/runtime/process/state"
 )
-
-// requireCgroupV2 fails fast on hosts without the cgroup v2 unified
-// hierarchy (ADR-0001), even though Phase 1/2 do not themselves write any
-// cgroup controls (that's Phase 4, runtime.md §6 "out of scope"). The
-// unified hierarchy's cgroup.controllers file only exists under v2/unified
-// mode — it is absent under v1 and legacy "hybrid" setups, making it a
-// reliable, cheap detection check (runtime.md §6 "test environment").
-func requireCgroupV2() error {
-	if _, err := os.Stat("/sys/fs/cgroup/cgroup.controllers"); err != nil {
-		return fmt.Errorf("cgroup v2 unified hierarchy not found at /sys/fs/cgroup (ADR-0001 requires cgroup v2): %w", err)
-	}
-	return nil
-}
 
 // SupervisorFailureError distinguishes a Glider runtime/supervisor failure
 // (glider-init crashed or was killed after the workload was already
@@ -66,17 +54,29 @@ func (e *SupervisorFailureError) Unwrap() error { return e.Err }
 // The returned exit code is the workload's own exit status (or, if it was
 // terminated by a signal, 128+signal) — never assumed to be 0.
 func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
-	if err := requireCgroupV2(); err != nil {
+	// Discovery (finding the cgroup2 mount) has no side effects; the
+	// actual delegation bootstrap (EnsureDelegated, which can move this
+	// process — docs/design/cgroups.md "Delegation") happens below, after
+	// CREATING is durably recorded, so a failure there is attributable to
+	// a specific container's launch like every other setup step.
+	mgr, err := cgroup.NewManager()
+	if err != nil {
 		return 0, err
 	}
 
 	dir := state.Dir(cfg.stateDir(), cfg.ContainerID)
 	now := time.Now()
+	cgroupPath, err := mgr.ContainerPathRelative(cfg.ContainerID)
+	if err != nil {
+		return 0, err
+	}
 	rec := state.Record{
 		ContainerID: cfg.ContainerID,
 		RootFS:      cfg.RootFS,
 		Argv:        cfg.Argv,
 		Hostname:    cfg.Hostname,
+		CgroupPath:  cgroupPath,
+		Resources:   toStateResources(cfg.Resources),
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -85,7 +85,10 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	// the ABSENT -> CREATING transition — the only point a container's
 	// on-disk existence begins (container-lifecycle.md §3). Locking
 	// (inside saveTransition) deliberately does not create it on demand —
-	// see state.TryLock's doc comment for why.
+	// see state.TryLock's doc comment for why. The intended cgroup path is
+	// recorded in this same durable write, before the cgroup itself is
+	// created (container-lifecycle.md §3: "the record of intent is
+	// durable before the resource exists").
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		// No state transition is possible yet (ABSENT only ever legally
 		// moves to CREATING — state.ValidTransition), so this is returned
@@ -96,6 +99,27 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	if err := saveTransition(dir, &rec, state.Creating); err != nil {
 		return 0, err
 	}
+
+	if err := mgr.EnsureDelegated(); err != nil {
+		return failLaunch(dir, &rec, err)
+	}
+	if _, err := mgr.Create(cfg.ContainerID, cfg.Resources); err != nil {
+		return failLaunch(dir, &rec, fmt.Errorf("create container cgroup: %w", err))
+	}
+	// From here on, a container cgroup exists on disk; every subsequent
+	// failure path must remove it before returning (Phase 4 §35: "no
+	// invalid configuration should leave a cgroup directory behind" —
+	// extended to every launch failure, not just invalid config). This
+	// single deferred cleanup covers every early-return below uniformly,
+	// rather than repeating it at each one; it only acts if the launch
+	// never reached RUNNING (launchSucceeded), since a live container's
+	// cgroup must obviously survive the rest of Run's normal operation.
+	launchSucceeded := false
+	defer func() {
+		if !launchSucceeded {
+			cleanupContainerCgroup(mgr, cfg.ContainerID)
+		}
+	}()
 
 	readyR, readyW, err := os.Pipe()
 	if err != nil {
@@ -176,6 +200,31 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	rec.InitPID = initIdentity.PID
 	rec.InitStartTime = initIdentity.StartTime
 
+	// Attach glider-init to the container cgroup now, before CREATED is
+	// published and strictly before "go" is ever sent (Phase 4 §14's
+	// critical invariant: no user code runs before cgroup membership and
+	// limits are established). Every descendant glider-init forks from
+	// here on — the workload, and anything it forks in turn — inherits
+	// this membership automatically; nothing else needs to attach itself
+	// (Phase 4 §14).
+	if err := mgr.Attach(cfg.ContainerID, initIdentity.PID); err != nil {
+		goW.Close()
+		resultR.Close()
+		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
+		reap()
+		return failLaunch(dir, &rec, fmt.Errorf("attach container init to cgroup: %w", err))
+	}
+	if ok, err := mgr.VerifyAttached(cfg.ContainerID, initIdentity.PID); err != nil || !ok {
+		goW.Close()
+		resultR.Close()
+		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
+		reap()
+		if err == nil {
+			err = fmt.Errorf("glider-init's real cgroup membership does not match the container cgroup")
+		}
+		return failLaunch(dir, &rec, fmt.Errorf("verify cgroup attachment: %w", err))
+	}
+
 	if err := saveTransition(dir, &rec, state.Created); err != nil {
 		goW.Close()
 		resultR.Close()
@@ -217,6 +266,7 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 		reap()
 		return 0, err
 	}
+	launchSucceeded = true
 
 	return waitOrStop(stop, cmd, dir, &rec, stopGrace)
 }
@@ -274,6 +324,14 @@ func finishAfterInitExit(dir string, rec *state.Record, initWaitErr error) (int,
 	if err == nil {
 		*rec = loaded
 		if rec.Phase == state.Exited {
+			// glider-init and every process that shared its cgroup are
+			// confirmed gone (cmd.Wait() already returned) — safe to
+			// remove the container cgroup now, as part of Run's own
+			// normal shutdown, rather than deferring it to a later
+			// explicit Recover call (Phase 4 §19; unlike Phase 1/2's
+			// mounts, a cgroup does not self-clean and would otherwise
+			// leak on every single ordinary container run).
+			cleanupContainerCgroupByName(rec.ContainerID)
 			if rec.ExitCode == nil {
 				return 0, &SupervisorFailureError{Err: fmt.Errorf("container recorded EXITED with no exit code")}
 			}
@@ -292,6 +350,7 @@ func finishAfterInitExit(dir string, rec *state.Record, initWaitErr error) (int,
 	if convErr := convergeAfterUnexpectedInitExit(dir, rec); convErr != nil {
 		return 0, &SupervisorFailureError{Err: fmt.Errorf("container init exited unexpectedly (%v) and could not be converged safely: %w", initWaitErr, convErr)}
 	}
+	cleanupContainerCgroupByName(rec.ContainerID)
 	return 0, &SupervisorFailureError{Err: fmt.Errorf("container supervisor exited before recording the workload's outcome (inferred EXITED, real exit code unknown)")}
 }
 

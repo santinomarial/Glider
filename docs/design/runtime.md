@@ -6,15 +6,21 @@ superseded by §8.2 — the container's init process (`glider-init`) remains
 PID 1 for the container's whole life and supervises the workload as a
 child, per [ADR-0006](../adr/0006-glider-init-pid1-supervisor.md); §5 is
 kept below only as a historical record of the question Phase 1 left open.
+Phase 4 (cgroup v2 resource isolation, layered on top of §8's PID 1
+supervisor — glider-init and the workload share one container cgroup,
+attached before the workload is ever released to run) has its own
+document, [cgroups.md](cgroups.md), rather than a new section here.
 Related: [container-lifecycle.md](container-lifecycle.md),
-[failure-model.md](failure-model.md), [security-model.md](security-model.md).
+[failure-model.md](failure-model.md), [security-model.md](security-model.md),
+[cgroups.md](cgroups.md).
 
 This document specifies how Glider executes a container process on a single
 Linux host: process architecture, namespace setup, synchronization, and
-PID 1 behavior. It does not cover cgroups (Phase 4), image/OverlayFS
-(Phase 5–7), capabilities/seccomp (Phase 8), or networking (Phase 9) beyond
-noting where each will attach — those get their own docs when their phase
-begins.
+PID 1 behavior. It does not cover cgroup *resource enforcement* (that's
+[cgroups.md](cgroups.md), Phase 4 — the cgroup *namespace* is still created
+here, unconfigured, per §2's table), image/OverlayFS (Phase 5–7),
+capabilities/seccomp (Phase 8), or networking (Phase 9) beyond noting where
+each will attach — those get their own docs when their phase begins.
 
 ## 1. Process architecture
 

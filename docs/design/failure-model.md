@@ -30,6 +30,10 @@ failure handling.
 | Corrupt image blob | yes — digest verification rejects it before use (master plan §13, §32 "image corruption" chaos scenario) | | |
 | Stale node reconnect (rejoin after being marked UNREACHABLE) | yes — self-fencing on rejoin, generation validation before resuming any workload (overview.md §5.4) | | |
 | PID reuse | yes — PID + start-time identity tuple (container-lifecycle.md §5) | | |
+| Workload exceeds configured CPU limit | yes — cgroup v2 throttles (not kills) the workload; the workload continues running, slower (cgroups.md §4, Phase 4) | | guaranteeing a specific latency/throughput floor under CPU pressure |
+| Workload exceeds configured memory limit | yes — the kernel OOM-kills the offending process; Glider reports the container's own termination (128+SIGKILL) rather than collapsing it into a generic failure (cgroups.md §4/§11, Phase 4) | | preventing the OOM kill itself, or choosing *which* process in a multi-process container the kernel kills |
+| Workload exceeds configured PID limit | yes — further forks inside the container's cgroup fail (`EAGAIN`-class refusal) while the container's existing processes keep running; this is also Glider's fork-bomb containment (cgroups.md §4) | | |
+| Abandoned/leaked container cgroup (crash before cleanup) | yes — `process.Recover`'s `DELETING` handling removes it idempotently, same identity-validated discipline as PID reuse above (cgroups.md §8) | | |
 | Slow node (correct but high-latency) | | yes — indistinguishable from partial failure at the heartbeat layer; SUSPECT state (overview.md §5.1) surfaces it without immediately fencing | guaranteeing bounded scheduling latency under an arbitrarily slow node |
 | Clock skew between nodes | design avoids depending on synchronized wall clocks for correctness (§2 below) | | tight bounds on lease timing accuracy under large skew |
 | Two schedulers racing to bind the same task | yes — atomic CAS bind, loser retries against fresh state (overview.md §5.3, master plan §22) | | |

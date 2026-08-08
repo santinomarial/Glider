@@ -2,6 +2,7 @@ package state
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -159,7 +160,7 @@ func TestLoadMissingSchemaVersionIsPhase1Format(t *testing.T) {
 
 func TestLoadMissingRequiredField(t *testing.T) {
 	dir := t.TempDir()
-	writeRaw(t, dir, `{"schema_version": 2, "phase": "RUNNING"}`)
+	writeRaw(t, dir, fmt.Sprintf(`{"schema_version": %d, "phase": "RUNNING"}`, SchemaVersion))
 
 	_, err := Load(dir)
 	if !errors.Is(err, ErrCorruptState) {
@@ -169,7 +170,7 @@ func TestLoadMissingRequiredField(t *testing.T) {
 
 func TestLoadInvalidPhase(t *testing.T) {
 	dir := t.TempDir()
-	writeRaw(t, dir, `{"schema_version": 2, "container_id": "abc", "phase": "SIDEWAYS"}`)
+	writeRaw(t, dir, fmt.Sprintf(`{"schema_version": %d, "container_id": "abc", "phase": "SIDEWAYS"}`, SchemaVersion))
 
 	_, err := Load(dir)
 	if !errors.Is(err, ErrCorruptState) {
