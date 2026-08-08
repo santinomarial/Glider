@@ -10,6 +10,7 @@ import (
 type NodeStore interface {
 	ListNodes(context.Context) ([]api.Node, error)
 	PutNode(context.Context, api.Node, int64) (api.Node, error)
+	EvictNodeAssignments(context.Context,string) error
 }
 type Monitor struct {
 	client        *clientv3.Client
@@ -53,6 +54,7 @@ func (m *Monitor) Run(ctx context.Context) error {
 				if changed {
 					node.Status.UpdatedAt = now
 					_, _ = m.store.PutNode(ctx, node, node.Metadata.Revision)
+					if node.Status.Phase == api.NodeUnreachable { _ = m.store.EvictNodeAssignments(ctx,node.Metadata.ID) }
 				}
 			}
 		}

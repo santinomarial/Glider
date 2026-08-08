@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/santinomarial/glider/internal/api"
@@ -41,6 +42,7 @@ type record struct {
 type Reconciler struct {
 	root   string
 	driver Driver
+	mu     sync.Mutex
 }
 
 func New(root string, driver Driver) (*Reconciler, error) {
@@ -59,6 +61,8 @@ func New(root string, driver Driver) (*Reconciler, error) {
 // Reconcile is a full level-triggered pass. Event watches only wake this
 // operation; durable desired state and observed kernel state determine action.
 func (r *Reconciler) Reconcile(ctx context.Context, desired []api.Assignment) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	records, err := r.load()
 	if err != nil {
 		return err
