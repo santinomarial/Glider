@@ -100,7 +100,37 @@ func setRevision[T any](v *T, rev int64) {
 		x.Metadata.Revision = rev
 	case *api.Service:
 		x.Metadata.Revision = rev
+	case *api.Event:
+		x.Metadata.Revision = rev
 	}
+}
+func (s *Store) PutEvent(ctx context.Context, event api.Event) (api.Event, error) {
+	if !validID(event.Metadata.ID) {
+		return event, errors.New("invalid event ID")
+	}
+	event.APIVersion = api.Version
+	if event.Time.IsZero() {
+		event.Time = time.Now().UTC()
+	}
+	event.Metadata.Revision = 0
+	return putResource(ctx, s.client, s.key("events", event.Metadata.ID), event, 0)
+}
+func (s *Store) ListEvents(ctx context.Context) ([]api.Event, error) {
+	resp, err := s.client.Get(ctx, s.kindPrefix("events"), clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]api.Event, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		var event api.Event
+		if err := json.Unmarshal(kv.Value, &event); err != nil {
+			return nil, err
+		}
+		event.Metadata.Revision = kv.ModRevision
+		out = append(out, event)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Time.Before(out[j].Time) })
+	return out, nil
 }
 func (s *Store) ListServices(ctx context.Context) ([]api.Service, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("services"), clientv3.WithPrefix())

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/santinomarial/glider/internal/controlplane"
 	"github.com/santinomarial/glider/internal/discovery"
 	"github.com/santinomarial/glider/internal/lease"
+	"github.com/santinomarial/glider/internal/observability"
 	"github.com/santinomarial/glider/internal/scheduler"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 )
@@ -29,6 +31,7 @@ func main() {
 	endpoints := flag.String("etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	clusterID := flag.String("cluster-id", "default", "Glider cluster ID")
 	dnsListen := flag.String("dns-listen", "", "optional authoritative cluster DNS UDP address (for example :53)")
+	metricsListen := flag.String("metrics-listen", "127.0.0.1:9090", "Prometheus metrics listen address; empty disables")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -65,6 +68,20 @@ func main() {
 	}
 	go func() { _ = workloads.Run(ctx, 2*time.Second) }()
 	go func() { _ = services.Run(ctx, 2*time.Second) }()
+	if *metricsListen != "" {
+		metrics := &http.Server{Addr: *metricsListen, Handler: observability.NewMetricsHandler(store), ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			<-ctx.Done()
+			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = metrics.Shutdown(shutdown)
+		}()
+		go func() {
+			if err := metrics.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatal(err)
+			}
+		}()
+	}
 	if *dnsListen != "" {
 		dns, err := discovery.NewDNS(store)
 		if err != nil {

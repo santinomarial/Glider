@@ -93,6 +93,18 @@ func (s *Service) ListServices(ctx context.Context, _ *structpb.Struct) (*struct
 	values, err := s.store.ListServices(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
 }
+func (s *Service) PutEvent(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	var event api.Event
+	if err := decode(in, &event); err != nil {
+		return nil, invalid(err)
+	}
+	saved, err := s.store.PutEvent(ctx, event)
+	return encode(saved, mapError(err))
+}
+func (s *Service) ListEvents(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
+	values, err := s.store.ListEvents(ctx)
+	return encode(map[string]any{"items": values}, mapError(err))
+}
 func (s *Service) Schedule(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "task_id")
 	if err != nil {
@@ -166,6 +178,8 @@ type server interface {
 	ListWorkloads(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutService(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListServices(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	PutEvent(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	ListEvents(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	Schedule(context.Context, *structpb.Struct) (*structpb.Struct, error)
 }
 
@@ -216,6 +230,12 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("ListServices", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListServices(c, r)
+	}),
+	unary("PutEvent", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.PutEvent(c, r)
+	}),
+	unary("ListEvents", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.ListEvents(c, r)
 	}),
 	unary("Schedule", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.Schedule(c, r)

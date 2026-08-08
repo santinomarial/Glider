@@ -187,6 +187,19 @@ type ServiceStatus struct {
 	UpdatedAt time.Time         `json:"updated_at,omitempty"`
 }
 
+type Event struct {
+	APIVersion string         `json:"apiVersion"`
+	Metadata   Metadata       `json:"metadata"`
+	Time       time.Time      `json:"time"`
+	Type       string         `json:"type"`
+	Reason     string         `json:"reason"`
+	Message    string         `json:"message,omitempty"`
+	ObjectKind string         `json:"object_kind"`
+	ObjectID   string         `json:"object_id"`
+	NodeID     string         `json:"node_id,omitempty"`
+	Fields     map[string]any `json:"fields,omitempty"`
+}
+
 type Assignment struct {
 	APIVersion    string        `json:"apiVersion"`
 	Metadata      Metadata      `json:"metadata"`

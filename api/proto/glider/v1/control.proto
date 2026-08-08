@@ -17,5 +17,7 @@ service ControlPlane {
   rpc ListWorkloads(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc PutService(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListServices(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc PutEvent(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc ListEvents(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc Schedule(google.protobuf.Struct) returns (google.protobuf.Struct);
 }
