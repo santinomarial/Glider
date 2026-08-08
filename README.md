@@ -8,7 +8,7 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **Phase 17 — readiness-gated rolling deployments**. Glider now
+Status: **Phase 18 — readiness-aware service discovery**. Glider now
 adds bridge/veth networking, persistent IPAM, DNS, NAT and host-port
 publication; a restart-safe `gliderd` reconciliation loop; an etcd-backed
 versioned gRPC control plane; and a resource-aware scheduler whose assignment
@@ -17,7 +17,8 @@ VXLAN node-subnet networking; replica reconciliation and node-failure
 replacement; and distinct startup, liveness, and readiness semantics with
 bounded restart backoff. Workload template revisions roll forward under durable
 `maxSurge`/`maxUnavailable` budgets, and stalled replacements preserve healthy
-old capacity. This builds on Phase 8's secured OCI image
+old capacity. Services select labeled tasks, publish only Ready container
+addresses, and resolve through stable `<service>.glider` DNS names. This builds on Phase 8's secured OCI image
 execution, Phase 4's cgroup v2 limits, and Phase 2's PID 1
 supervision/crash recovery, and Phase 1's Linux namespace runtime. (Phase 3's originally
 planned mount-isolation/`pivot_root` scope was completed early, inside
@@ -36,6 +37,8 @@ See [docs/design/leases-overlay-workloads-health.md](docs/design/leases-overlay-
 for Phases 13–16.
 See [docs/design/rolling-deployments.md](docs/design/rolling-deployments.md) for
 Phase 17.
+See [docs/design/service-discovery.md](docs/design/service-discovery.md) for
+Phase 18.
 
 Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
 run of the full unit + integration test suite (re-execs itself inside a
