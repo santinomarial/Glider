@@ -560,3 +560,26 @@ Candidate for reconsideration once a real `gliderd` needs true live
 re-attachment/adoption semantics (ADR-0006's "what would cause
 reconsideration"), evaluated then against the actual minimum supported
 kernel.
+
+## 9. Phases 5–8: image rootfs and secured workload exec
+
+`glider-runtime run --image` prepares a verified OCI image and a writable
+OverlayFS snapshot before entering the existing lifecycle. The resulting
+`merged` path becomes `Config.RootFS`; namespace and `pivot_root` mechanics are
+unchanged. OCI environment and working directory are carried through the
+internal re-exec contract, while `_GLIDER_*` control variables are stripped
+from the final workload environment.
+
+Phase 8 adds a second internal re-exec boundary between `glider-init` and the
+workload. It exists because Go's `os/exec` has no safe general-purpose
+post-fork hook in which a multi-threaded process can install capabilities and
+seccomp. The helper starts as the workload process-group leader, writes a
+ready byte, applies the security policy, and calls `execve`. Its status fd is
+`CLOEXEC`: the init observes ready+EOF only when the real workload exec
+succeeds. Any policy/exec error is returned on the same fd and prevents the
+`CREATED -> RUNNING` transition.
+
+After confirmation, the launcher verifies through `/proc/<init-pid>/root` that
+the namespace init actually sees the requested rootfs before publishing
+`RUNNING`. See [image-store.md](image-store.md) and
+[security-model.md](security-model.md) for the subsystem contracts.

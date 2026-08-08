@@ -262,6 +262,12 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 		reap()
 		return failLaunch(dir, &rec, fmt.Errorf("%s", out.reason))
 	}
+	if ok, err := VerifyProcessRoot(rec.InitPID, cfg.RootFS); err != nil || !ok {
+		_ = syscall.Kill(cmd.Process.Pid, syscall.SIGKILL)
+		reap()
+		if err == nil { err = fmt.Errorf("container init root does not match requested rootfs") }
+		return failLaunch(dir, &rec, fmt.Errorf("verify container rootfs: %w", err))
+	}
 
 	// Best-effort: resolve the workload's host PID/start-time for
 	// observability. Not load-bearing (state.Record.WorkloadPID's doc

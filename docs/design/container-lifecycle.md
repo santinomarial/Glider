@@ -1,6 +1,6 @@
 # Container lifecycle
 
-Status: Phase 0 design, binding for Phase 1–4 implementation. Phase 2
+Status: Phase 0 design, binding through Phase 8 implementation. Phase 2
 (docs/adr/0006) froze who durably publishes each transition now that a
 container's init (`glider-init`) and its workload are different processes
 — see the "Owner" column in §3 and the note under §1's table; the state
@@ -71,11 +71,10 @@ checked:
    identity recovery ever needs to validate, not a tree walk.
 5. The recorded init PID's root filesystem (via `/proc/<pid>/root`)
    resolves to this container's merged OverlayFS mount, not the host's or
-   another container's. (Not yet enforced as of Phase 2 — no OverlayFS
-   exists until Phase 5-7; noted here as the frozen future invariant, not
-   a current check.)
+   another container's. This is enforced before `RUNNING` publication for
+   both caller-provided rootfs directories and Phase 7 OverlayFS snapshots.
 
-Integration tests in Phase 1–4 assert this directly rather than trusting the
+Integration tests through Phase 8 assert this directly rather than trusting the
 state file alone — the state file records *intent*, `/proc` is checked for
 *fact*. A mismatch (state says RUNNING, `/proc` disagrees) is not silently
 "fixed" by rewriting the state file to match; it is surfaced as a detected
