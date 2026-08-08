@@ -1,6 +1,7 @@
 # Runtime design
 
-Status: Phase 0 design; §5 is the binding Phase 1 exit contract.
+Status: Phase 1 implemented against this contract; see §7 for what the
+implementation concretized. §5 remains the binding Phase 1 exit contract.
 Related: [container-lifecycle.md](container-lifecycle.md),
 [failure-model.md](failure-model.md), [security-model.md](security-model.md).
 
@@ -222,3 +223,48 @@ container-lifecycle.md §4 (exercised by a real `gliderd`-less recovery
 check once that logic exists — noted here as the contract, implemented as
 its own test in Phase 2 when the persistence layer for it is more than a
 stub).
+
+## 7. Phase 1 implementation notes
+
+Concrete choices the implementation had to make within this contract —
+clarifications of the design above, not new frozen decisions, so none of
+these are ADRs:
+
+- **Mount ordering.** §3's sync diagram and §4's numbered steps read as
+  slightly different orderings in isolation. The implementation resolves
+  them as: everything in §4 steps 1-2 and 4 (private remount, bind-mount
+  root onto itself, and mounting `/proc`/`/sys`/`/dev`/`/dev/pts`/`/dev/shm`
+  *under* the not-yet-current root, e.g. `<rootfs>/proc`) happens before
+  the child signals "ready"; `pivot_root` itself (step 3) is the single
+  action taken after receiving "go", immediately before `execve`. This
+  matches §3's diagram exactly and keeps the actual root swap — the
+  point-of-no-return step — minimal and last. Mounting at `<rootfs>/proc`
+  before pivot_root and mounting at `/proc` after are mechanically
+  identical (pivot_root only changes what "/" refers to, not where these
+  submounts live), so this doesn't change what's mounted, only when.
+- **Unified error channel.** A single pipe (CLOEXEC on the child's end)
+  carries *both* explicit setup-failure messages (mount, pivot_root) and
+  exec-failure detection (via the standard trick of the fd auto-closing on
+  a successful `execve`, giving EOF-means-success). §3 only specified the
+  ready/go barrier; this channel is the mechanism behind "Expected failure
+  handling" above.
+- **Container init and workload are the same OS process in Phase 1** — the
+  re-exec'd init directly `execve`s the workload, becoming it, as §1's
+  diagram shows. §5's open question (whether a later phase should instead
+  keep Glider's own init as PID 1 and fork the workload as a child, for
+  full signal-forwarding/reaping semantics) is unaffected by this — Phase 1
+  implements the diagram's minimal case, Phase 2 decides whether to add a
+  wrapper.
+- **Exit-gate (d) test methodology.** Because an unhandled `SIGTERM` sent
+  to a namespace's PID 1 is not delivered with default disposition (§5),
+  the integration test's workload fixture explicitly traps `SIGTERM`
+  rather than relying on default-terminate behavior no arbitrary Phase 1
+  workload actually has. The test proves the launcher correctly delivers
+  the signal to the right process across the namespace boundary, which is
+  what Phase 1 can honestly guarantee; it does not claim every unmodified
+  workload stops on `SIGTERM` without its own handler.
+- **`/dev` population.** Individual device nodes (`null`, `zero`, `full`,
+  `random`, `urandom`, `tty`) are bind-mounted from the host into the
+  fresh per-container `tmpfs`, rather than created with `mknod` — avoids a
+  `CAP_MKNOD` dependency for a Phase 1 scope that already assumes full
+  privilege (§6 "privilege expectations").
