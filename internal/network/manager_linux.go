@@ -25,11 +25,17 @@ import (
 const DefaultBridge = "glider0"
 
 type Endpoint struct {
-	Owner    string     `json:"owner"`
-	Address  netip.Addr `json:"address"`
-	Gateway  netip.Addr `json:"gateway"`
-	HostVeth string     `json:"host_veth"`
-	Phase    string     `json:"phase"`
+	Owner    string        `json:"owner"`
+	Address  netip.Addr    `json:"address"`
+	Gateway  netip.Addr    `json:"gateway"`
+	HostVeth string        `json:"host_veth"`
+	Phase    string        `json:"phase"`
+	Ports    []PortMapping `json:"ports,omitempty"`
+}
+type PortMapping struct {
+	Protocol      string `json:"protocol"`
+	HostPort      uint16 `json:"host_port"`
+	ContainerPort uint16 `json:"container_port"`
 }
 type Manager struct {
 	root, bridge string
@@ -57,6 +63,9 @@ func NewManager(root, cidr, bridge string) (*Manager, error) {
 }
 
 func (m *Manager) Ensure(ctx context.Context, owner string, initPID int) (Endpoint, error) {
+	return m.EnsureWithPorts(ctx, owner, initPID, nil)
+}
+func (m *Manager) EnsureWithPorts(ctx context.Context, owner string, initPID int, ports []PortMapping) (Endpoint, error) {
 	if err := ctx.Err(); err != nil {
 		return Endpoint{}, err
 	}
@@ -68,7 +77,10 @@ func (m *Manager) Ensure(ctx context.Context, owner string, initPID int) (Endpoi
 		return Endpoint{}, err
 	}
 	host, peer := vethNames(owner)
-	ep := Endpoint{Owner: owner, Address: allocation.Address, Gateway: m.pool.Gateway(), HostVeth: host, Phase: "CREATING"}
+	if err := validatePorts(ports); err != nil {
+		return Endpoint{}, err
+	}
+	ep := Endpoint{Owner: owner, Address: allocation.Address, Gateway: m.pool.Gateway(), HostVeth: host, Phase: "CREATING", Ports: append([]PortMapping(nil), ports...)}
 	if err := m.save(ep); err != nil {
 		_ = m.pool.Release(owner)
 		return Endpoint{}, err
@@ -148,6 +160,9 @@ func (m *Manager) Ensure(ctx context.Context, owner string, initPID int) (Endpoi
 	if err := m.save(ep); err != nil {
 		return Endpoint{}, err
 	}
+	if err := m.reconcileNAT(); err != nil {
+		return Endpoint{}, err
+	}
 	return ep, nil
 }
 
@@ -165,10 +180,13 @@ func (m *Manager) Remove(owner string) error {
 		return err
 	}
 	err := os.Remove(m.path(owner))
-	if os.IsNotExist(err) {
-		return nil
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	return err
+	if err := m.reconcileNAT(); err != nil {
+		return err
+	}
+	return nil
 }
 func (m *Manager) ensureBridge() error {
 	link, err := netlink.LinkByName(m.bridge)
@@ -212,6 +230,23 @@ func vethNames(owner string) (string, string) {
 }
 func safeOwner(s string) bool {
 	return s != "" && len(s) <= 128 && filepath.Base(s) == s && s != "." && s != ".."
+}
+func validatePorts(ports []PortMapping) error {
+	seen := map[string]bool{}
+	for _, p := range ports {
+		if p.Protocol != "tcp" && p.Protocol != "udp" {
+			return fmt.Errorf("unsupported port protocol %q", p.Protocol)
+		}
+		if p.HostPort == 0 || p.ContainerPort == 0 {
+			return errors.New("ports must be nonzero")
+		}
+		key := fmt.Sprintf("%s/%d", p.Protocol, p.HostPort)
+		if seen[key] {
+			return fmt.Errorf("duplicate host port %s", key)
+		}
+		seen[key] = true
+	}
+	return nil
 }
 func (m *Manager) path(owner string) string { return filepath.Join(m.root, "endpoints", owner+".json") }
 func (m *Manager) save(ep Endpoint) error {
