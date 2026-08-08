@@ -16,6 +16,13 @@ import (
 // unsupported and is rejected defensively by RunInit (init.go).
 const ReexecArg = "__glider_init__"
 
+// ReexecWorkloadArg enters the short-lived workload security trampoline. It
+// installs the Phase 8 policy and execs the real workload, preserving
+// glider-init as namespace PID 1.
+const ReexecWorkloadArg = "__glider_workload__"
+
+const fdWorkloadExecStatus = 3
+
 // Fixed extra-file-descriptor numbers the child (__glider_init__) reads its
 // synchronization pipes from. os/exec.Cmd.ExtraFiles places entry i at fd
 // 3+i in the child, with 0/1/2 remaining the inherited stdio (runtime.md

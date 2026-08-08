@@ -198,9 +198,11 @@ func runSupervisor(path string, argv []string, resultW *os.File, cfg supervisorC
 	notified := append(append([]os.Signal{}, forwardedSignals()...), syscall.SIGCHLD)
 	signal.Notify(sigCh, notified...)
 
+	execStatusR, execStatusW, err := os.Pipe()
+	if err != nil { fail(resultW, fmt.Errorf("create workload exec-status pipe: %w", err)) }
 	cmd := &exec.Cmd{
-		Path:   path,
-		Args:   argv,
+		Path:   "/proc/self/exe",
+		Args:   append([]string{"/proc/self/exe", ReexecWorkloadArg, path}, argv...),
 		Env:    os.Environ(),
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
@@ -212,12 +214,25 @@ func runSupervisor(path string, argv []string, resultW *os.File, cfg supervisorC
 		// itself called setsid() to leave the group (a documented
 		// limitation, not a security property — see runtime.md §5).
 		SysProcAttr: &syscall.SysProcAttr{Setpgid: true},
+		ExtraFiles: []*os.File{execStatusW},
 	}
 
 	if err := cmd.Start(); err != nil {
+		execStatusR.Close(); execStatusW.Close()
 		fail(resultW, fmt.Errorf("start workload %q: %w", argv[0], err))
 	}
+	execStatusW.Close()
 	mainPID := cmd.Process.Pid
+	execResult, readErr := os.ReadFile("/proc/self/fd/" + fmt.Sprint(execStatusR.Fd()))
+	execStatusR.Close()
+	if readErr != nil || len(execResult) == 0 || execResult[0] != 1 || len(execResult) > 1 {
+		_ = syscall.Kill(-mainPID, syscall.SIGKILL)
+		_, _ = cmd.Process.Wait()
+		reason := string(execResult)
+		if len(execResult) > 0 && execResult[0] == 1 { reason = string(execResult[1:]) }
+		if reason == "" { reason = fmt.Sprint(readErr) }
+		fail(resultW, fmt.Errorf("secure workload exec failed: %s", reason))
+	}
 
 	// cmd.Start() returning nil is authoritative confirmation that execve
 	// succeeded (Go's os/exec implements the same fork+CLOEXEC-error-pipe

@@ -49,6 +49,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "glider-runtime: internal error: __glider_init__ returned")
 		os.Exit(2)
 	}
+	if len(os.Args) > 1 && os.Args[1] == process.ReexecWorkloadArg {
+		process.RunWorkload(os.Args[2:])
+		fmt.Fprintln(os.Stderr, "glider-runtime: internal error: __glider_workload__ returned")
+		os.Exit(2)
+	}
 
 	if len(os.Args) < 2 {
 		usage()
