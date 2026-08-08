@@ -54,11 +54,37 @@ type NodeSpec struct {
 }
 
 type RestartPolicy string
-const ( RestartNever RestartPolicy = "Never"; RestartOnFailure RestartPolicy = "OnFailure"; RestartAlways RestartPolicy = "Always" )
+
+const (
+	RestartNever     RestartPolicy = "Never"
+	RestartOnFailure RestartPolicy = "OnFailure"
+	RestartAlways    RestartPolicy = "Always"
+)
+
 type ProbeKind string
-const ( ProbeExec ProbeKind = "exec"; ProbeHTTP ProbeKind = "http"; ProbeTCP ProbeKind = "tcp" )
-type Probe struct { Kind ProbeKind `json:"kind"`; Command []string `json:"command,omitempty"`; URL string `json:"url,omitempty"`; Address string `json:"address,omitempty"`; InitialDelay time.Duration `json:"initial_delay,omitempty"`; Period time.Duration `json:"period,omitempty"`; Timeout time.Duration `json:"timeout,omitempty"`; FailureThreshold int `json:"failure_threshold,omitempty"`; SuccessThreshold int `json:"success_threshold,omitempty"` }
-type HealthSpec struct { Startup *Probe `json:"startup,omitempty"`; Liveness *Probe `json:"liveness,omitempty"`; Readiness *Probe `json:"readiness,omitempty"` }
+
+const (
+	ProbeExec ProbeKind = "exec"
+	ProbeHTTP ProbeKind = "http"
+	ProbeTCP  ProbeKind = "tcp"
+)
+
+type Probe struct {
+	Kind             ProbeKind     `json:"kind"`
+	Command          []string      `json:"command,omitempty"`
+	URL              string        `json:"url,omitempty"`
+	Address          string        `json:"address,omitempty"`
+	InitialDelay     time.Duration `json:"initial_delay,omitempty"`
+	Period           time.Duration `json:"period,omitempty"`
+	Timeout          time.Duration `json:"timeout,omitempty"`
+	FailureThreshold int           `json:"failure_threshold,omitempty"`
+	SuccessThreshold int           `json:"success_threshold,omitempty"`
+}
+type HealthSpec struct {
+	Startup   *Probe `json:"startup,omitempty"`
+	Liveness  *Probe `json:"liveness,omitempty"`
+	Readiness *Probe `json:"readiness,omitempty"`
+}
 type NodeStatus struct {
 	Phase         NodePhase `json:"phase"`
 	Reserved      Resources `json:"reserved"`
@@ -87,19 +113,33 @@ type Task struct {
 	Status     TaskStatus `json:"status"`
 }
 type TaskSpec struct {
-	WorkloadID   string            `json:"workload_id"`
-	Image        string            `json:"image"`
-	Command      []string          `json:"command,omitempty"`
-	Resources    Resources         `json:"resources"`
-	NodeSelector map[string]string `json:"node_selector,omitempty"`
-	HostPorts    []uint16          `json:"host_ports,omitempty"`
-	RestartPolicy RestartPolicy    `json:"restart_policy,omitempty"`
-	Health       HealthSpec        `json:"health,omitempty"`
+	WorkloadID    string            `json:"workload_id"`
+	Image         string            `json:"image"`
+	Command       []string          `json:"command,omitempty"`
+	Resources     Resources         `json:"resources"`
+	NodeSelector  map[string]string `json:"node_selector,omitempty"`
+	HostPorts     []uint16          `json:"host_ports,omitempty"`
+	RestartPolicy RestartPolicy     `json:"restart_policy,omitempty"`
+	Health        HealthSpec        `json:"health,omitempty"`
 }
 
-type Workload struct { APIVersion string `json:"apiVersion"`; Metadata Metadata `json:"metadata"`; Spec WorkloadSpec `json:"spec"`; Status WorkloadStatus `json:"status"` }
-type WorkloadSpec struct { Replicas int `json:"replicas"`; Template TaskSpec `json:"template"` }
-type WorkloadStatus struct { ObservedGeneration int64 `json:"observed_generation"`; DesiredReplicas int `json:"desired_replicas"`; CurrentReplicas int `json:"current_replicas"`; ReadyReplicas int `json:"ready_replicas"`; UpdatedReplicas int `json:"updated_replicas"` }
+type Workload struct {
+	APIVersion string         `json:"apiVersion"`
+	Metadata   Metadata       `json:"metadata"`
+	Spec       WorkloadSpec   `json:"spec"`
+	Status     WorkloadStatus `json:"status"`
+}
+type WorkloadSpec struct {
+	Replicas int      `json:"replicas"`
+	Template TaskSpec `json:"template"`
+}
+type WorkloadStatus struct {
+	ObservedGeneration int64 `json:"observed_generation"`
+	DesiredReplicas    int   `json:"desired_replicas"`
+	CurrentReplicas    int   `json:"current_replicas"`
+	ReadyReplicas      int   `json:"ready_replicas"`
+	UpdatedReplicas    int   `json:"updated_replicas"`
+}
 type TaskStatus struct {
 	Phase                TaskPhase `json:"phase"`
 	AssignmentGeneration int64     `json:"assignment_generation,omitempty"`

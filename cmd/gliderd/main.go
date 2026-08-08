@@ -65,13 +65,26 @@ func main() {
 		fatal(err)
 	}
 	leaseManager, err := lease.New(client, clusterID, nodeID, uuid.NewString(), leaseTTL, selfFence)
-	if err != nil { fatal(err) }
-	runCtx, cancelRun := context.WithCancel(ctx); defer cancelRun()
+	if err != nil {
+		fatal(err)
+	}
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
 	errs := make(chan error, 2)
-	go func(){ errs <- daemon.Run(runCtx) }()
-	go func(){ errs <- leaseManager.Run(ctx, func(context.Context) error { cancelRun(); fenceCtx,cancel:=context.WithTimeout(context.Background(),selfFence);defer cancel();return reconciler.Reconcile(fenceCtx,nil) }) }()
-	err = <-errs; cancelRun()
-	if err != nil && ctx.Err() == nil { fatal(err) }
+	go func() { errs <- daemon.Run(runCtx) }()
+	go func() {
+		errs <- leaseManager.Run(ctx, func(context.Context) error {
+			cancelRun()
+			fenceCtx, cancel := context.WithTimeout(context.Background(), selfFence)
+			defer cancel()
+			return reconciler.Reconcile(fenceCtx, nil)
+		})
+	}()
+	err = <-errs
+	cancelRun()
+	if err != nil && ctx.Err() == nil {
+		fatal(err)
+	}
 }
 func split(value string) []string {
 	var out []string

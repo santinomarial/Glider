@@ -53,8 +53,11 @@ func (s *Store) PutNode(ctx context.Context, n api.Node, expectedRevision int64)
 	return putResource(ctx, s.client, s.key("nodes", n.Metadata.ID), n, expectedRevision)
 }
 func (s *Store) PutWorkload(ctx context.Context, w api.Workload, expectedRevision int64) (api.Workload, error) {
-	if !validID(w.Metadata.ID) { return w, errors.New("invalid workload ID") }
-	w.APIVersion = api.Version; w.Metadata.Revision = 0
+	if !validID(w.Metadata.ID) {
+		return w, errors.New("invalid workload ID")
+	}
+	w.APIVersion = api.Version
+	w.Metadata.Revision = 0
 	return putResource(ctx, s.client, s.key("workloads", w.Metadata.ID), w, expectedRevision)
 }
 
@@ -106,26 +109,92 @@ func (s *Store) GetTask(ctx context.Context, id string) (api.Task, error) {
 	return t, nil
 }
 func (s *Store) ListTasks(ctx context.Context) ([]api.Task, error) {
-	resp, err := s.client.Get(ctx, s.kindPrefix("tasks"), clientv3.WithPrefix()); if err != nil { return nil, err }
-	out := make([]api.Task, 0, len(resp.Kvs)); for _, kv := range resp.Kvs { var task api.Task; if err := json.Unmarshal(kv.Value, &task); err != nil { return nil, err }; task.Metadata.Revision = kv.ModRevision; out = append(out, task) }
-	sort.Slice(out, func(i,j int) bool { return out[i].Metadata.ID < out[j].Metadata.ID }); return out,nil
+	resp, err := s.client.Get(ctx, s.kindPrefix("tasks"), clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]api.Task, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		var task api.Task
+		if err := json.Unmarshal(kv.Value, &task); err != nil {
+			return nil, err
+		}
+		task.Metadata.Revision = kv.ModRevision
+		out = append(out, task)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Metadata.ID < out[j].Metadata.ID })
+	return out, nil
 }
 func (s *Store) ListWorkloads(ctx context.Context) ([]api.Workload, error) {
-	resp, err := s.client.Get(ctx, s.kindPrefix("workloads"), clientv3.WithPrefix()); if err != nil { return nil, err }
-	out := make([]api.Workload, 0, len(resp.Kvs)); for _, kv := range resp.Kvs { var w api.Workload; if err := json.Unmarshal(kv.Value, &w); err != nil { return nil, err }; w.Metadata.Revision = kv.ModRevision; out = append(out, w) }
-	sort.Slice(out, func(i,j int) bool { return out[i].Metadata.ID < out[j].Metadata.ID }); return out,nil
+	resp, err := s.client.Get(ctx, s.kindPrefix("workloads"), clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]api.Workload, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		var w api.Workload
+		if err := json.Unmarshal(kv.Value, &w); err != nil {
+			return nil, err
+		}
+		w.Metadata.Revision = kv.ModRevision
+		out = append(out, w)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Metadata.ID < out[j].Metadata.ID })
+	return out, nil
 }
+
 // DeleteTask removes a task and assignment and releases its reservation in one
 // transaction, so replica scale-down cannot leak capacity or race a bind.
 func (s *Store) DeleteTask(ctx context.Context, id string, expected int64) error {
-	task, err := s.GetTask(ctx,id); if err != nil { return err }; if expected>0 && task.Metadata.Revision!=expected { return storeapi.ErrConflict }
-	taskKey, assignmentKey := s.key("tasks",id), s.key("assignments",id)
-	assignmentKV, getErr := getOne(ctx,s.client,assignmentKey)
-	if errors.Is(getErr,storeapi.ErrNotFound) { resp,err:=s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(taskKey),"=",task.Metadata.Revision)).Then(clientv3.OpDelete(taskKey)).Commit();if err!=nil{return err};if !resp.Succeeded{return storeapi.ErrConflict};return nil }
-	if getErr!=nil{return getErr};var assignment api.Assignment;if err:=json.Unmarshal(assignmentKV.Value,&assignment);err!=nil{return err}
-	nodeKey:=s.key("nodes",assignment.NodeID);nodeKV,err:=getOne(ctx,s.client,nodeKey);if err!=nil{return err};var node api.Node;if err:=json.Unmarshal(nodeKV.Value,&node);err!=nil{return err}
-	node.Status.Reserved=node.Status.Reserved.Sub(assignment.Resources);if node.Status.Reserved.CPUMilli<0||node.Status.Reserved.MemoryBytes<0{return errors.New("corrupt negative node reservation")};node.Metadata.Revision=0;nodeData,_:=json.Marshal(node)
-	resp,err:=s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(taskKey),"=",task.Metadata.Revision),clientv3.Compare(clientv3.ModRevision(assignmentKey),"=",assignmentKV.ModRevision),clientv3.Compare(clientv3.ModRevision(nodeKey),"=",nodeKV.ModRevision)).Then(clientv3.OpDelete(taskKey),clientv3.OpDelete(assignmentKey),clientv3.OpPut(nodeKey,string(nodeData))).Commit();if err!=nil{return err};if !resp.Succeeded{return storeapi.ErrConflict};return nil
+	task, err := s.GetTask(ctx, id)
+	if err != nil {
+		return err
+	}
+	if expected > 0 && task.Metadata.Revision != expected {
+		return storeapi.ErrConflict
+	}
+	taskKey, assignmentKey := s.key("tasks", id), s.key("assignments", id)
+	assignmentKV, getErr := getOne(ctx, s.client, assignmentKey)
+	if errors.Is(getErr, storeapi.ErrNotFound) {
+		resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(taskKey), "=", task.Metadata.Revision)).Then(clientv3.OpDelete(taskKey)).Commit()
+		if err != nil {
+			return err
+		}
+		if !resp.Succeeded {
+			return storeapi.ErrConflict
+		}
+		return nil
+	}
+	if getErr != nil {
+		return getErr
+	}
+	var assignment api.Assignment
+	if err := json.Unmarshal(assignmentKV.Value, &assignment); err != nil {
+		return err
+	}
+	nodeKey := s.key("nodes", assignment.NodeID)
+	nodeKV, err := getOne(ctx, s.client, nodeKey)
+	if err != nil {
+		return err
+	}
+	var node api.Node
+	if err := json.Unmarshal(nodeKV.Value, &node); err != nil {
+		return err
+	}
+	node.Status.Reserved = node.Status.Reserved.Sub(assignment.Resources)
+	if node.Status.Reserved.CPUMilli < 0 || node.Status.Reserved.MemoryBytes < 0 {
+		return errors.New("corrupt negative node reservation")
+	}
+	node.Metadata.Revision = 0
+	nodeData, _ := json.Marshal(node)
+	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(taskKey), "=", task.Metadata.Revision), clientv3.Compare(clientv3.ModRevision(assignmentKey), "=", assignmentKV.ModRevision), clientv3.Compare(clientv3.ModRevision(nodeKey), "=", nodeKV.ModRevision)).Then(clientv3.OpDelete(taskKey), clientv3.OpDelete(assignmentKey), clientv3.OpPut(nodeKey, string(nodeData))).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		return storeapi.ErrConflict
+	}
+	return nil
 }
 func (s *Store) ListNodes(ctx context.Context) ([]api.Node, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("nodes"), clientv3.WithPrefix())
