@@ -45,7 +45,11 @@ type Reconciler struct {
 	driver Driver
 	mu     sync.Mutex
 }
-func containerID(a api.Assignment) string { sum:=sha256.Sum256([]byte(a.TaskID));return fmt.Sprintf("%x-g%d",sum[:10],a.Generation) }
+
+func containerID(a api.Assignment) string {
+	sum := sha256.Sum256([]byte(a.TaskID))
+	return fmt.Sprintf("%x-g%d", sum[:10], a.Generation)
+}
 
 func New(root string, driver Driver) (*Reconciler, error) {
 	if root == "" || !filepath.IsAbs(root) {
