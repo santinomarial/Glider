@@ -327,7 +327,23 @@ func ParsePortMapping(value string) (PortMapping, error) {
 	return p, nil
 }
 func (m *Manager) path(owner string) string { return filepath.Join(m.root, "endpoints", owner+".json") }
-func (m *Manager) Endpoint(owner string) (Endpoint,error){if !safeOwner(owner){return Endpoint{},errors.New("invalid endpoint owner")};data,err:=os.ReadFile(m.path(owner));if err!=nil{return Endpoint{},err};var endpoint Endpoint;if err:=json.Unmarshal(data,&endpoint);err!=nil{return Endpoint{},err};if endpoint.Owner!=owner{return Endpoint{},errors.New("endpoint owner mismatch")};return endpoint,nil}
+func (m *Manager) Endpoint(owner string) (Endpoint, error) {
+	if !safeOwner(owner) {
+		return Endpoint{}, errors.New("invalid endpoint owner")
+	}
+	data, err := os.ReadFile(m.path(owner))
+	if err != nil {
+		return Endpoint{}, err
+	}
+	var endpoint Endpoint
+	if err := json.Unmarshal(data, &endpoint); err != nil {
+		return Endpoint{}, err
+	}
+	if endpoint.Owner != owner {
+		return Endpoint{}, errors.New("endpoint owner mismatch")
+	}
+	return endpoint, nil
+}
 func (m *Manager) save(ep Endpoint) error {
 	data, err := json.MarshalIndent(ep, "", "  ")
 	if err != nil {

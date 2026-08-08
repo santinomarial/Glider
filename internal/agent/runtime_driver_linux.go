@@ -59,7 +59,34 @@ func (d *RuntimeDriver) EnsureOverlay(localTunnel string, peers []api.Node, mtu 
 	return d.network.EnsureOverlay(local, desired, mtu)
 }
 
-func (d *RuntimeDriver) CheckProbe(ctx context.Context,a api.Assignment,probe api.Probe) error { endpoint,err:=d.network.Endpoint(containerID(a));if err!=nil{return err};address:=endpoint.Address.String();switch probe.Kind{case api.ProbeTCP:_,port,err:=net.SplitHostPort(probe.Address);if err!=nil{return err};probe.Address=net.JoinHostPort(address,port);case api.ProbeHTTP:parsed,err:=url.Parse(probe.URL);if err!=nil{return err};_,port,splitErr:=net.SplitHostPort(parsed.Host);if splitErr==nil{parsed.Host=net.JoinHostPort(address,port)}else{parsed.Host=address};probe.URL=parsed.String()};return (&healthcheck.Prober{}).Check(ctx,probe) }
+func (d *RuntimeDriver) CheckProbe(ctx context.Context, a api.Assignment, probe api.Probe) error {
+	endpoint, err := d.network.Endpoint(containerID(a))
+	if err != nil {
+		return err
+	}
+	address := endpoint.Address.String()
+	switch probe.Kind {
+	case api.ProbeTCP:
+		_, port, err := net.SplitHostPort(probe.Address)
+		if err != nil {
+			return err
+		}
+		probe.Address = net.JoinHostPort(address, port)
+	case api.ProbeHTTP:
+		parsed, err := url.Parse(probe.URL)
+		if err != nil {
+			return err
+		}
+		_, port, splitErr := net.SplitHostPort(parsed.Host)
+		if splitErr == nil {
+			parsed.Host = net.JoinHostPort(address, port)
+		} else {
+			parsed.Host = address
+		}
+		probe.URL = parsed.String()
+	}
+	return (&healthcheck.Prober{}).Check(ctx, probe)
+}
 
 func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*RuntimeDriver, error) {
 	if dataRoot == "" || !filepath.IsAbs(dataRoot) {

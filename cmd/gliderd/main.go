@@ -73,7 +73,7 @@ func main() {
 	defer cancelRun()
 	errs := make(chan error, 2)
 	go func() { errs <- daemon.Run(runCtx) }()
-	go func() { _ = agent.NewHealthDaemon(nodeID,store,driver,time.Second).Run(runCtx) }()
+	go func() { _ = agent.NewHealthDaemon(nodeID, store, driver, time.Second).Run(runCtx) }()
 	go reconcileOverlay(runCtx, nodeID, store, driver, resync)
 	go func() {
 		errs <- leaseManager.Run(ctx, func(context.Context) error {

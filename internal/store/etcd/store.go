@@ -255,12 +255,81 @@ func (s *Store) EvictNodeAssignments(ctx context.Context, nodeID string) error {
 	return nil
 }
 func (s *Store) ReportTaskHealth(ctx context.Context, taskID string, generation int64, ready bool) error {
-	task,err:=s.GetTask(ctx,taskID);if err!=nil{return err};if task.Status.AssignmentGeneration!=generation{return storeapi.ErrConflict};if task.Status.Ready==ready{return nil};revision:=task.Metadata.Revision;task.Metadata.Revision=0;task.Status.Ready=ready;task.Status.LastHealthTransition=time.Now().UTC();data,_:=json.Marshal(task);resp,err:=s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks",taskID)),"=",revision)).Then(clientv3.OpPut(s.key("tasks",taskID),string(data))).Commit();if err!=nil{return err};if !resp.Succeeded{return storeapi.ErrConflict};return nil
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status.AssignmentGeneration != generation {
+		return storeapi.ErrConflict
+	}
+	if task.Status.Ready == ready {
+		return nil
+	}
+	revision := task.Metadata.Revision
+	task.Metadata.Revision = 0
+	task.Status.Ready = ready
+	task.Status.LastHealthTransition = time.Now().UTC()
+	data, _ := json.Marshal(task)
+	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks", taskID)), "=", revision)).Then(clientv3.OpPut(s.key("tasks", taskID), string(data))).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		return storeapi.ErrConflict
+	}
+	return nil
 }
+
 // RestartTask revokes exactly the observed generation and returns the task to
 // PENDING. A stale health result can never revoke a newer assignment.
 func (s *Store) RestartTask(ctx context.Context, taskID string, generation int64) error {
-	task,err:=s.GetTask(ctx,taskID);if err!=nil{return err};if task.Status.AssignmentGeneration!=generation{return storeapi.ErrConflict};assignmentKV,err:=getOne(ctx,s.client,s.key("assignments",taskID));if err!=nil{return err};var assignment api.Assignment;if err:=json.Unmarshal(assignmentKV.Value,&assignment);err!=nil{return err};if assignment.Generation!=generation{return storeapi.ErrConflict};nodeKV,err:=getOne(ctx,s.client,s.key("nodes",assignment.NodeID));if err!=nil{return err};var node api.Node;if err:=json.Unmarshal(nodeKV.Value,&node);err!=nil{return err};node.Status.Reserved=node.Status.Reserved.Sub(assignment.Resources);if node.Status.Reserved.CPUMilli<0||node.Status.Reserved.MemoryBytes<0{return errors.New("corrupt negative node reservation")};taskRevision:=task.Metadata.Revision;task.Metadata.Revision=0;task.Status.Phase=api.TaskPending;task.Status.NodeID="";task.Status.Ready=false;task.Status.RestartCount++;node.Metadata.Revision=0;taskData,_:=json.Marshal(task);nodeData,_:=json.Marshal(node);resp,err:=s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks",taskID)),"=",taskRevision),clientv3.Compare(clientv3.ModRevision(s.key("assignments",taskID)),"=",assignmentKV.ModRevision),clientv3.Compare(clientv3.ModRevision(s.key("nodes",assignment.NodeID)),"=",nodeKV.ModRevision)).Then(clientv3.OpPut(s.key("tasks",taskID),string(taskData)),clientv3.OpPut(s.key("nodes",assignment.NodeID),string(nodeData)),clientv3.OpDelete(s.key("assignments",taskID))).Commit();if err!=nil{return err};if !resp.Succeeded{return storeapi.ErrConflict};return nil
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status.AssignmentGeneration != generation {
+		return storeapi.ErrConflict
+	}
+	assignmentKV, err := getOne(ctx, s.client, s.key("assignments", taskID))
+	if err != nil {
+		return err
+	}
+	var assignment api.Assignment
+	if err := json.Unmarshal(assignmentKV.Value, &assignment); err != nil {
+		return err
+	}
+	if assignment.Generation != generation {
+		return storeapi.ErrConflict
+	}
+	nodeKV, err := getOne(ctx, s.client, s.key("nodes", assignment.NodeID))
+	if err != nil {
+		return err
+	}
+	var node api.Node
+	if err := json.Unmarshal(nodeKV.Value, &node); err != nil {
+		return err
+	}
+	node.Status.Reserved = node.Status.Reserved.Sub(assignment.Resources)
+	if node.Status.Reserved.CPUMilli < 0 || node.Status.Reserved.MemoryBytes < 0 {
+		return errors.New("corrupt negative node reservation")
+	}
+	taskRevision := task.Metadata.Revision
+	task.Metadata.Revision = 0
+	task.Status.Phase = api.TaskPending
+	task.Status.NodeID = ""
+	task.Status.Ready = false
+	task.Status.RestartCount++
+	node.Metadata.Revision = 0
+	taskData, _ := json.Marshal(task)
+	nodeData, _ := json.Marshal(node)
+	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(s.key("tasks", taskID)), "=", taskRevision), clientv3.Compare(clientv3.ModRevision(s.key("assignments", taskID)), "=", assignmentKV.ModRevision), clientv3.Compare(clientv3.ModRevision(s.key("nodes", assignment.NodeID)), "=", nodeKV.ModRevision)).Then(clientv3.OpPut(s.key("tasks", taskID), string(taskData)), clientv3.OpPut(s.key("nodes", assignment.NodeID), string(nodeData)), clientv3.OpDelete(s.key("assignments", taskID))).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		return storeapi.ErrConflict
+	}
+	return nil
 }
 func (s *Store) ListNodes(ctx context.Context) ([]api.Node, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("nodes"), clientv3.WithPrefix())
