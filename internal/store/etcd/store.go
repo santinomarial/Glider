@@ -133,6 +133,40 @@ func (s *Store) ListAssignments(ctx context.Context) ([]api.Assignment, error) {
 	return out, nil
 }
 
+func (s *Store) Snapshot(ctx context.Context, nodeID string) ([]api.Assignment, error) {
+	all, err := s.ListAssignments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0]
+	for _, a := range all {
+		if a.NodeID == nodeID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+func (s *Store) Watch(ctx context.Context, nodeID string) (<-chan struct{}, error) {
+	if !validID(nodeID) {
+		return nil, errors.New("invalid node ID")
+	}
+	out := make(chan struct{}, 1)
+	watch := s.client.Watch(ctx, s.kindPrefix("assignments"), clientv3.WithPrefix())
+	go func() {
+		defer close(out)
+		for response := range watch {
+			if response.Err() != nil {
+				return
+			}
+			select {
+			case out <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	return out, nil
+}
+
 func (s *Store) Bind(ctx context.Context, r storeapi.BindRequest) (api.Assignment, error) {
 	task, err := s.GetTask(ctx, r.TaskID)
 	if err != nil {
