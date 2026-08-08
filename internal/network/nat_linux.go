@@ -38,6 +38,7 @@ func (m *Manager) reconcileNAT() error {
 	table := conn.AddTable(&nftables.Table{Family: nftables.TableFamilyIPv4, Name: nftTableName})
 	post := conn.AddChain(&nftables.Chain{Name: "postrouting", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPostrouting, Priority: nftables.ChainPriorityNATSource})
 	pre := conn.AddChain(&nftables.Chain{Name: "prerouting", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityNATDest})
+	output := conn.AddChain(&nftables.Chain{Name: "output", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityNATDest})
 	network := m.pool.Subnet().Masked().Addr().As4()
 	maskBits := m.pool.Subnet().Bits()
 	mask := binary.BigEndian.Uint32([]byte{255, 255, 255, 255}) << uint(32-maskBits)
@@ -57,7 +58,9 @@ func (m *Manager) reconcileNAT() error {
 			binary.BigEndian.PutUint16(host, p.HostPort)
 			container := make([]byte, 2)
 			binary.BigEndian.PutUint16(container, p.ContainerPort)
-			conn.AddRule(&nftables.Rule{Table: table, Chain: pre, Exprs: []expr.Any{&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{proto}}, &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: host}, &expr.Immediate{Register: 1, Data: ep.Address.AsSlice()}, &expr.Immediate{Register: 2, Data: container}, &expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2}}})
+			for _, chain := range []*nftables.Chain{pre, output} {
+				conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: []expr.Any{&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{proto}}, &expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: host}, &expr.Immediate{Register: 1, Data: ep.Address.AsSlice()}, &expr.Immediate{Register: 2, Data: container}, &expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2}}})
+			}
 		}
 	}
 	if err := conn.Flush(); err != nil {

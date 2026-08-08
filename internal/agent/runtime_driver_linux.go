@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -46,12 +47,19 @@ func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*Run
 	return &RuntimeDriver{dataRoot: dataRoot, stateRoot: filepath.Join(dataRoot, "containers"), images: images, network: network, startTimeout: 30 * time.Second}, nil
 }
 
-func containerID(a api.Assignment) string { return fmt.Sprintf("%s-g%d", a.TaskID, a.Generation) }
+func containerID(a api.Assignment) string {
+	sum := sha256.Sum256([]byte(a.TaskID))
+	return fmt.Sprintf("%x-g%d", sum[:10], a.Generation)
+}
 
 func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed, error) {
 	id := containerID(a)
 	if observed, err := d.observeID(id); err != nil || observed.Phase == ObservedRunning {
 		return observed, err
+	} else if observed.Phase != ObservedAbsent {
+		if err := d.cleanup(ctx, id); err != nil { return Observed{}, err }
+	} else if _, err := os.Stat(processstate.Dir(d.stateRoot, id)); err == nil {
+		if err := d.cleanup(ctx, id); err != nil { return Observed{}, err }
 	}
 	if a.Image == "" {
 		return Observed{}, errors.New("assignment image is required")
@@ -152,8 +160,15 @@ func (d *RuntimeDriver) Remove(ctx context.Context, a api.Assignment, _ Observed
 			}
 		}
 	}
-	if _, err := process.Recover(d.stateRoot, id); err != nil && !errors.Is(err, process.ErrContainerNotFound) {
-		return err
+	return d.cleanup(ctx, id)
+}
+
+func (d *RuntimeDriver) cleanup(ctx context.Context, id string) error {
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := ctx.Err(); err != nil { return err }
+		_, err := process.Recover(d.stateRoot, id)
+		if errors.Is(err, process.ErrContainerNotFound) { break }
+		if err != nil { return err }
 	}
 	if err := d.network.Remove(id); err != nil {
 		return err
