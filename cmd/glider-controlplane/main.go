@@ -24,6 +24,7 @@ import (
 	"github.com/santinomarial/glider/internal/lease"
 	"github.com/santinomarial/glider/internal/observability"
 	"github.com/santinomarial/glider/internal/scheduler"
+	secretapi "github.com/santinomarial/glider/internal/secret"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
@@ -52,6 +53,7 @@ func main() {
 	quotaServices := flag.Int64("quota-services", 1000, "maximum cluster services")
 	quotaCPUMilli := flag.Int64("quota-cpu-milli", 1000000, "maximum aggregate requested CPU in millicores")
 	quotaMemoryBytes := flag.Int64("quota-memory-bytes", 1<<50, "maximum aggregate requested memory")
+	secretKeyFile := flag.String("secret-key-file", "", "path to 32-byte secret encryption key (required)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
@@ -81,7 +83,14 @@ func main() {
 	if err := store.ConfigureQuota(ctx, etcdstore.QuotaLimits{Tasks: *quotaTasks, Workloads: *quotaWorkloads, Services: *quotaServices, Resources: api.Resources{CPUMilli: *quotaCPUMilli, MemoryBytes: *quotaMemoryBytes}}); err != nil {
 		fatal(err)
 	}
-	service, err := controlplane.New(store)
+	if *secretKeyFile == "" {
+		fatal(errors.New("--secret-key-file is required"))
+	}
+	secretCipher, err := secretapi.LoadKeyFile(*secretKeyFile, *clusterID)
+	if err != nil {
+		fatal(err)
+	}
+	service, err := controlplane.New(store, secretCipher)
 	if err != nil {
 		fatal(err)
 	}

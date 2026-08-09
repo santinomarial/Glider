@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,7 +20,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal(errors.New("usage: glider-admin backup|verify|restore"))
+		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key"))
 	}
 	var err error
 	switch os.Args[1] {
@@ -34,12 +35,50 @@ func main() {
 		err = runRestore(os.Args[2:])
 	case "pki":
 		err = runPKI(os.Args[2:])
+	case "secret-key":
+		err = runSecretKey(os.Args[2:])
 	default:
 		err = errors.New("unknown command")
 	}
 	if err != nil {
 		fatal(err)
 	}
+}
+
+func runSecretKey(args []string) error {
+	fs := flag.NewFlagSet("secret-key", flag.ContinueOnError)
+	output := fs.String("output", "", "new 32-byte secret encryption key path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *output == "" || !filepath.IsAbs(*output) {
+		return errors.New("--output must be an absolute path")
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(*output), 0o750); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(*output, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(key); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		_ = os.Remove(*output)
+		return err
+	}
+	if closeErr != nil {
+		_ = os.Remove(*output)
+		return closeErr
+	}
+	fmt.Printf("secret_key=%s mode=0600 bytes=32\n", *output)
+	return nil
 }
 
 type tlsFlags struct{ cert, key, ca, serverName *string }

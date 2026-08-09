@@ -190,6 +190,12 @@ type ServiceStatus struct {
 	UpdatedAt time.Time         `json:"updated_at,omitempty"`
 }
 
+type Secret struct {
+	APIVersion string            `json:"apiVersion"`
+	Metadata   Metadata          `json:"metadata"`
+	Data       map[string][]byte `json:"data,omitempty"`
+}
+
 type Event struct {
 	APIVersion string         `json:"apiVersion"`
 	Metadata   Metadata       `json:"metadata"`

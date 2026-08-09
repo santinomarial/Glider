@@ -201,6 +201,8 @@ func run(ctx context.Context, c client, args []string) error {
 		return list(ctx, c, "ListTasks")
 	case "events":
 		return list(ctx, c, "ListEvents")
+	case "secret":
+		return runSecret(ctx, c, args[1:])
 	case "inspect":
 		if len(args) != 3 {
 			return errors.New("usage: glider inspect task|workload|service ID")
@@ -263,6 +265,56 @@ func run(ctx context.Context, c client, args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+func runSecret(ctx context.Context, c client, args []string) error {
+	if len(args) == 1 && args[0] == "list" {
+		return list(ctx, c, "ListSecrets")
+	}
+	if len(args) == 2 && args[0] == "delete" {
+		result, err := c.call(ctx, "ListSecrets", map[string]any{})
+		if err != nil {
+			return err
+		}
+		var values []api.Secret
+		if err := items(result, &values); err != nil {
+			return err
+		}
+		for _, value := range values {
+			if value.Metadata.ID == args[1] || value.Metadata.Name == args[1] {
+				return printCall(ctx, c, "DeleteSecret", map[string]any{"id": value.Metadata.ID, "revision": value.Metadata.Revision})
+			}
+		}
+		return errors.New("secret not found")
+	}
+	if len(args) >= 3 && args[0] == "put" {
+		value := api.Secret{Metadata: api.Metadata{ID: args[1], IdempotencyKey: newIdempotencyKey()}, Data: make(map[string][]byte)}
+		for _, source := range args[2:] {
+			key, path, ok := strings.Cut(source, "=")
+			if !ok || key == "" || path == "" {
+				return errors.New("secret sources must use KEY=FILE")
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read secret source %s: %w", path, err)
+			}
+			value.Data[key] = data
+		}
+		result, err := c.call(ctx, "ListSecrets", map[string]any{})
+		if err != nil {
+			return err
+		}
+		var existing []api.Secret
+		if err := items(result, &existing); err != nil {
+			return err
+		}
+		for _, item := range existing {
+			if item.Metadata.ID == value.Metadata.ID {
+				value.Metadata.Revision = item.Metadata.Revision
+			}
+		}
+		return printCall(ctx, c, "PutSecret", value)
+	}
+	return errors.New("usage: glider secret put NAME KEY=FILE... | secret list | secret delete NAME")
 }
 func (c client) nodeCall(ctx context.Context, method, taskID string, extra map[string]any) (map[string]any, error) {
 	task, err := c.call(ctx, "GetTask", map[string]any{"id": taskID})
@@ -379,7 +431,7 @@ func newIdempotencyKey() string {
 	return hex.EncodeToString(value[:])
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|delete|nodes|drain|ps|inspect|logs|exec|stats|events")
+	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|delete|nodes|drain|ps|inspect|logs|exec|stats|events|secret")
 	os.Exit(2)
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "glider:", err); os.Exit(1) }

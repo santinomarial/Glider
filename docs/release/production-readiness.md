@@ -11,7 +11,7 @@ Passing unit tests alone does not close a row.
 | Authorization | P0 | No policy enforcement | Deny-by-default RBAC for mutations, exec, logs, stats, node registration, and events |
 | Node operations | P0 | `logs`, `exec`, `stats` fail explicitly | Bounded authenticated streaming, generation fencing, terminal resize/cancel, and audit records |
 | API admission | P0 | Central validation, transport limits, rate limits, atomic quotas, durable mutation idempotency keys, and admission fuzz target exist | Sustained release-candidate fuzz evidence |
-| Secret handling | P0 | No workload secret model | Encrypted-at-rest secret objects, redaction, least-privilege delivery, and rotation |
+| Secret handling | P0 | Authenticated encrypted-at-rest objects, protected key files, redacted listing, and rotation writes exist | Assignment-fenced least-privilege node delivery and rotation integration tests |
 | Control-plane HA | P0 | One process is demonstrated | Three-member etcd and multiple API/controller instances pass leader/failover tests without duplicate authority |
 | Backup and disaster recovery | P0 | None | Automated etcd snapshot, verified restore, recovery-point/runbook test, and corrupt-backup rejection |
 | Upgrades and schema migration | P0 | No compatibility or migration machinery | Version-skew policy, forward/backward migration, canary upgrade, and rollback test |

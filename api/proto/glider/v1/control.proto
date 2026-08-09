@@ -22,6 +22,9 @@ service ControlPlane {
   rpc PutService(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc DeleteService(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListServices(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc PutSecret(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc ListSecrets(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc DeleteSecret(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc PutEvent(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListEvents(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc Schedule(google.protobuf.Struct) returns (google.protobuf.Struct);

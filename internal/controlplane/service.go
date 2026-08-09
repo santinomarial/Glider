@@ -4,6 +4,7 @@ package controlplane
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/santinomarial/glider/internal/admission"
 	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/scheduler"
+	secretapi "github.com/santinomarial/glider/internal/secret"
 	storeapi "github.com/santinomarial/glider/internal/store"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
@@ -28,9 +30,10 @@ const ServiceName = "glider.v1.ControlPlane"
 type Service struct {
 	store     *etcdstore.Store
 	scheduler *scheduler.Controller
+	secrets   *secretapi.Cipher
 }
 
-func New(store *etcdstore.Store) (*Service, error) {
+func New(store *etcdstore.Store, secrets ...*secretapi.Cipher) (*Service, error) {
 	if store == nil {
 		return nil, errors.New("store is required")
 	}
@@ -38,7 +41,11 @@ func New(store *etcdstore.Store) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, scheduler: s}, nil
+	service := &Service{store: store, scheduler: s}
+	if len(secrets) > 0 {
+		service.secrets = secrets[0]
+	}
+	return service, nil
 }
 
 func (s *Service) PutTask(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
@@ -251,6 +258,63 @@ func (s *Service) ListServices(ctx context.Context, _ *structpb.Struct) (*struct
 	values, err := s.store.ListServices(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
 }
+func (s *Service) PutSecret(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	if s.secrets == nil {
+		return nil, status.Error(codes.FailedPrecondition, "secret encryption is not configured")
+	}
+	var value api.Secret
+	if err := decode(in, &value); err != nil {
+		return nil, invalid(err)
+	}
+	if err := admission.Secret(value); err != nil {
+		return nil, invalid(err)
+	}
+	if err := requireIdempotencyKey(value.Metadata); err != nil {
+		return nil, invalid(err)
+	}
+	expected := value.Metadata.Revision
+	envelope, err := s.secrets.Encrypt(value)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "encrypt secret")
+	}
+	saved, err := s.store.PutSecret(ctx, envelope, expected)
+	if errors.Is(err, storeapi.ErrConflict) {
+		current, getErr := s.store.GetSecret(ctx, value.Metadata.ID)
+		if getErr == nil && current.Metadata.IdempotencyKey == value.Metadata.IdempotencyKey {
+			if !hmac.Equal(current.PayloadMAC, envelope.PayloadMAC) {
+				return nil, status.Error(codes.AlreadyExists, "idempotency key was reused for different secret data")
+			}
+			saved, err = current, nil
+		}
+	}
+	return encode(api.Secret{APIVersion: api.Version, Metadata: saved.Metadata}, mapError(err))
+}
+func (s *Service) ListSecrets(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
+	values, err := s.store.ListSecrets(ctx)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	redacted := make([]api.Secret, 0, len(values))
+	for _, value := range values {
+		redacted = append(redacted, api.Secret{APIVersion: api.Version, Metadata: value.Metadata})
+	}
+	return encode(map[string]any{"items": redacted}, nil)
+}
+func (s *Service) DeleteSecret(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	id, err := requiredString(in, "id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	expected, err := requiredRevision(in, "revision")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	err = s.store.DeleteSecret(ctx, id, expected)
+	if errors.Is(err, storeapi.ErrNotFound) {
+		err = nil
+	}
+	return encode(map[string]any{"deleted": id}, mapError(err))
+}
 func (s *Service) PutEvent(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var event api.Event
 	if err := decode(in, &event); err != nil {
@@ -366,6 +430,9 @@ type server interface {
 	PutService(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	DeleteService(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListServices(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	PutSecret(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	ListSecrets(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	DeleteSecret(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutEvent(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListEvents(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	Schedule(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -433,6 +500,15 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("ListServices", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListServices(c, r)
+	}),
+	unary("PutSecret", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.PutSecret(c, r)
+	}),
+	unary("ListSecrets", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.ListSecrets(c, r)
+	}),
+	unary("DeleteSecret", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.DeleteSecret(c, r)
 	}),
 	unary("PutEvent", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.PutEvent(c, r)

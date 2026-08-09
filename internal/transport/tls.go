@@ -128,6 +128,9 @@ func authorized(roles map[string]bool, method string) bool {
 		return roles["operator"]
 	}
 	name := method[strings.LastIndex(method, "/")+1:]
+	if name == "ListSecrets" {
+		return roles["operator"]
+	}
 	read := strings.HasPrefix(name, "List") || strings.HasPrefix(name, "Get")
 	if roles["viewer"] && read {
 		return true

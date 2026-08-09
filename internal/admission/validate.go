@@ -147,3 +147,22 @@ func Event(v api.Event) error {
 	}
 	return nil
 }
+func Secret(v api.Secret) error {
+	if err := metadata(v.Metadata); err != nil {
+		return err
+	}
+	if len(v.Data) == 0 || len(v.Data) > 64 {
+		return errors.New("secret must contain between 1 and 64 entries")
+	}
+	total := 0
+	for key, value := range v.Data {
+		if !idPattern.MatchString(key) {
+			return fmt.Errorf("invalid secret key %q", key)
+		}
+		total += len(value)
+	}
+	if total > 1<<20 {
+		return errors.New("secret data exceeds 1 MiB")
+	}
+	return nil
+}

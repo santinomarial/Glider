@@ -16,6 +16,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/santinomarial/glider/internal/api"
+	secretapi "github.com/santinomarial/glider/internal/secret"
 	storeapi "github.com/santinomarial/glider/internal/store"
 )
 
@@ -117,7 +118,69 @@ func setRevision[T any](v *T, rev int64) {
 		x.Metadata.Revision = rev
 	case *api.Event:
 		x.Metadata.Revision = rev
+	case *secretapi.Envelope:
+		x.Metadata.Revision = rev
 	}
+}
+
+func (s *Store) PutSecret(ctx context.Context, value secretapi.Envelope, expected int64) (secretapi.Envelope, error) {
+	if !validID(value.Metadata.ID) {
+		return value, errors.New("invalid secret ID")
+	}
+	value.Metadata.Revision = 0
+	return putResource(ctx, s.client, s.key("secrets", value.Metadata.ID), value, expected)
+}
+
+func (s *Store) GetSecret(ctx context.Context, id string) (secretapi.Envelope, error) {
+	var value secretapi.Envelope
+	if !validID(id) {
+		return value, storeapi.ErrNotFound
+	}
+	kv, err := getOne(ctx, s.client, s.key("secrets", id))
+	if err != nil {
+		return value, err
+	}
+	if err := json.Unmarshal(kv.Value, &value); err != nil {
+		return value, fmt.Errorf("decode secret %s: %w", id, err)
+	}
+	value.Metadata.Revision = kv.ModRevision
+	return value, nil
+}
+
+func (s *Store) ListSecrets(ctx context.Context) ([]secretapi.Envelope, error) {
+	resp, err := s.client.Get(ctx, s.kindPrefix("secrets"), clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	values := make([]secretapi.Envelope, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		var value secretapi.Envelope
+		if err := json.Unmarshal(kv.Value, &value); err != nil {
+			return nil, err
+		}
+		value.Metadata.Revision = kv.ModRevision
+		values = append(values, value)
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i].Metadata.ID < values[j].Metadata.ID })
+	return values, nil
+}
+
+func (s *Store) DeleteSecret(ctx context.Context, id string, expected int64) error {
+	if !validID(id) {
+		return storeapi.ErrNotFound
+	}
+	key := s.key("secrets", id)
+	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(key), "=", expected)).Then(clientv3.OpDelete(key)).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		if _, err := getOne(ctx, s.client, key); errors.Is(err, storeapi.ErrNotFound) {
+			return storeapi.ErrNotFound
+		}
+		return storeapi.ErrConflict
+	}
+	return nil
 }
 func (s *Store) PutEvent(ctx context.Context, event api.Event) (api.Event, error) {
 	if !validID(event.Metadata.ID) {

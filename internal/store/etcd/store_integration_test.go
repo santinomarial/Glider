@@ -1,6 +1,7 @@
 package etcd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 
 	"github.com/santinomarial/glider/internal/api"
+	secretapi "github.com/santinomarial/glider/internal/secret"
 	storeapi "github.com/santinomarial/glider/internal/store"
 )
 
@@ -114,6 +116,39 @@ func TestQuotaConfigurationMustMatchAcrossReplicas(t *testing.T) {
 	limits.Tasks = 2
 	if err := s.ConfigureQuota(ctx, limits); err == nil {
 		t.Fatal("mismatched replica quota was accepted")
+	}
+}
+
+func TestSecretPersistenceContainsOnlyAuthenticatedCiphertext(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "secret-cluster")
+	cipher, _ := secretapi.NewCipher(bytes.Repeat([]byte{3}, 32), "secret-cluster")
+	plaintext := []byte("never-store-this-plaintext")
+	envelope, err := cipher.Encrypt(api.Secret{Metadata: api.Metadata{ID: "database"}, Data: map[string][]byte{"password": plaintext}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.PutSecret(context.Background(), envelope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := client.Get(context.Background(), s.key("secrets", "database"))
+	if err != nil || len(raw.Kvs) != 1 {
+		t.Fatalf("raw secret = %v, %v", raw.Kvs, err)
+	}
+	if bytes.Contains(raw.Kvs[0].Value, plaintext) {
+		t.Fatal("etcd value contains secret plaintext")
+	}
+	stored, err := s.GetSecret(context.Background(), "database")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := cipher.Decrypt(stored)
+	if err != nil || !bytes.Equal(decoded.Data["password"], plaintext) {
+		t.Fatalf("decoded secret = %#v, %v", decoded, err)
+	}
+	if err := s.DeleteSecret(context.Background(), "database", saved.Metadata.Revision); err != nil {
+		t.Fatal(err)
 	}
 }
 
