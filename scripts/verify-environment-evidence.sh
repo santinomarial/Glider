@@ -12,12 +12,22 @@ if [ -z "${PUBLIC_KEY}" ] || [ ! -f "${PUBLIC_KEY}" ]; then
 	echo "GLIDER_ENVIRONMENT_EVIDENCE_PUBLIC_KEY must name the trusted independent-review Ed25519 public key" >&2
 	exit 2
 fi
-for file in manifest.txt SHA256SUMS SHA256SUMS.sig multi-host-lb.log off-host-restore.log rolling-upgrade.log node-replacement.log disk-pressure.log network-qualification.log monitoring-delivery.log security-review.md; do
+for file in manifest.txt SHA256SUMS SHA256SUMS.sig multi-host-lb.log off-host-restore.log rolling-upgrade.log node-replacement.log disk-pressure.log network-qualification.log monitoring-delivery.log host-acceptance.log multi-host-soak.log security-review.md; do
 	if [ ! -s "${EVIDENCE}/${file}" ]; then
 		echo "required environment evidence is missing or empty: ${file}" >&2
 		exit 1
 	fi
 done
+while IFS=$'\t' read -r scenario checks; do
+	while IFS= read -r check; do
+		marker="GLIDER_ASSERT scenario=${scenario} check=${check} result=pass observed="
+		count="$(awk -v marker="${marker}" 'index($0, marker) == 1 && length($0) > length(marker) { count++ } END { print count + 0 }' "${EVIDENCE}/${scenario}.log")"
+		if [ "${count}" -ne 1 ]; then
+			echo "signed evidence lacks exactly one passing ${scenario}/${check} observation" >&2
+			exit 1
+		fi
+	done < <(printf '%s\n' "${checks}" | tr ',' '\n')
+done < "${REPO_ROOT}/qualification/required-checks.tsv"
 expected="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
 actual="$(sed -n 's/^source_commit=//p' "${EVIDENCE}/manifest.txt")"
 decision="$(sed -n 's/^security_decision=//p' "${EVIDENCE}/manifest.txt")"

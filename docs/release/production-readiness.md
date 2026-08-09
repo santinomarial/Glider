@@ -33,9 +33,11 @@ compatibility matrix, migration result, and disaster-recovery result. The
 workflow fails closed if a P0 gate is missing, skipped, flaky, or relies only
 on a manual assertion.
 
-`scripts/production-release.sh` additionally requires the independently signed
-release-environment evidence contract in `environment-evidence.md`. A local
-operator cannot self-assert or bypass these external P0 results.
+`scripts/qualify-environment.sh` executes the canonical multi-host assertion
+matrix. `scripts/production-release.sh` then requires that output and the
+independent review to be signed under the evidence contract in
+`environment-evidence.md`. A local operator cannot self-assert or bypass these
+external P0 results.
 
 ## Scope boundary
 

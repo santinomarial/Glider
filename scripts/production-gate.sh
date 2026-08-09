@@ -29,6 +29,7 @@ run_gate vulnerabilities scripts/test-vulnerabilities.sh
 run_gate admission-fuzz env GLIDER_FUZZ_TIME="${GLIDER_FUZZ_TIME:-60s}" scripts/test-fuzz.sh
 run_gate convergence-chaos env GLIDER_CHAOS_ITERATIONS="${GLIDER_CHAOS_ITERATIONS:-50}" scripts/test-chaos.sh
 run_gate monitoring scripts/test-monitoring.sh
+run_gate environment-qualification-contract scripts/test-environment-qualification.sh
 run_gate environment-evidence-contract scripts/test-environment-evidence.sh
 run_gate backup-recovery docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work golang:1.26 sh -c 'tar -C /src -cf - . | tar -C /work -xf - && go test -race -v ./test/integration/backup ./test/integration/secrets'
 run_gate packaged-ha scripts/test-packaged-ha.sh

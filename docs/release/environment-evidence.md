@@ -1,6 +1,12 @@
 # Release-environment evidence
 
-A production tag requires `scripts/production-release.sh EVIDENCE_DIR`. It runs
+A production tag requires `scripts/production-release.sh EVIDENCE_DIR`. Build
+the unsigned evidence first with
+`scripts/qualify-environment.sh PLAN_DIR ABSOLUTE_OUTPUT_DIR`; the plan contains
+`plan.env` plus one executable per scenario in
+`qualification/required-checks.tsv`. Each executable performs the real
+environment operation and emits the required machine-readable observations.
+The production release command runs
 the complete local gate only after independently signed environment evidence is
 verified against the exact source commit. Set
 `GLIDER_ENVIRONMENT_EVIDENCE_PUBLIC_KEY` to the trusted reviewer's Ed25519
@@ -16,9 +22,21 @@ The evidence directory must contain non-empty results named:
 - `disk-pressure.log`: sustained pressure, cordon, evacuation, and recovery.
 - `network-qualification.log`: cross-host VXLAN, VIP, DNS, ingress, and egress.
 - `monitoring-delivery.log`: scrape, dashboard, rule, routing, and pager drill.
+- `host-acceptance.log`: preflight, systemd sandbox, reboot recovery, logging,
+  and time synchronization on release hosts.
+- `multi-host-soak.log`: sustained mutations and fault injection with recovery
+  SLO, single-authority, and leak observations.
 - `security-review.md`: independent threat-model findings and disposition.
 
-`manifest.txt` must include the exact `source_commit`, a non-empty
+Copy `qualification/plan.env.example` to `PLAN_DIR/plan.env` and replace every
+example value. The runner rejects fewer than three unique control-plane hosts,
+fewer than two unique workers, a loopback load balancer, local backup storage,
+missing scenarios, failed commands, missing assertions, and duplicate passing
+assertions. A scenario's `observed=` value must contain the concrete host,
+measurement, object identifier, timestamp, or delivery receipt supporting the
+check; reviewers must reject placeholders.
+
+After qualification, `manifest.txt` must include the exact `source_commit`, a non-empty
 `independent_reviewer`, and `security_decision=approved`. Hash every evidence
 file except `SHA256SUMS` and `SHA256SUMS.sig` into GNU-format `SHA256SUMS`, then
 sign that checksum file with the reviewer's Ed25519 key:
