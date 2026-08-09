@@ -165,6 +165,21 @@ func (s *Store) GetTask(ctx context.Context, id string) (api.Task, error) {
 	t.Metadata.Revision = kv.ModRevision
 	return t, nil
 }
+func (s *Store) GetNode(ctx context.Context, id string) (api.Node, error) {
+	var node api.Node
+	if !validID(id) {
+		return node, storeapi.ErrNotFound
+	}
+	kv, err := getOne(ctx, s.client, s.key("nodes", id))
+	if err != nil {
+		return node, err
+	}
+	if err := json.Unmarshal(kv.Value, &node); err != nil {
+		return node, fmt.Errorf("decode node %s: %w", id, err)
+	}
+	node.Metadata.Revision = kv.ModRevision
+	return node, nil
+}
 func (s *Store) ListTasks(ctx context.Context) ([]api.Task, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("tasks"), clientv3.WithPrefix())
 	if err != nil {

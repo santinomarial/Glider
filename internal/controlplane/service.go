@@ -95,6 +95,33 @@ func (s *Service) ListNodes(ctx context.Context, _ *structpb.Struct) (*structpb.
 	values, err := s.store.ListNodes(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
 }
+func (s *Service) DrainNode(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	id, err := requiredString(in, "id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	expected, err := requiredRevision(in, "revision")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	node, err := s.store.GetNode(ctx, id)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	if node.Metadata.Revision != expected {
+		return nil, mapError(storeapi.ErrConflict)
+	}
+	node.Spec.Unschedulable = true
+	node.Status.Phase = api.NodeDraining
+	saved, err := s.store.PutNode(ctx, node, expected)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	if err := s.store.EvictNodeAssignments(ctx, id); err != nil {
+		return nil, mapError(err)
+	}
+	return encode(saved, nil)
+}
 func (s *Service) ListAssignments(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
 	values, err := s.store.ListAssignments(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
@@ -230,6 +257,7 @@ type server interface {
 	GetTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListTasks(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListNodes(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	DrainNode(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListAssignments(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListWorkloads(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -278,6 +306,9 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("ListNodes", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListNodes(c, r)
+	}),
+	unary("DrainNode", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.DrainNode(c, r)
 	}),
 	unary("ListAssignments", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListAssignments(c, r)

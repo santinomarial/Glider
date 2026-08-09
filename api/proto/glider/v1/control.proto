@@ -14,6 +14,7 @@ service ControlPlane {
   rpc GetTask(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListTasks(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListNodes(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc DrainNode(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListAssignments(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc PutWorkload(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListWorkloads(google.protobuf.Struct) returns (google.protobuf.Struct);

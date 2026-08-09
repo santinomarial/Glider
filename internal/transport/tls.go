@@ -132,7 +132,7 @@ func authorized(roles map[string]bool, method string) bool {
 	if roles["viewer"] && read {
 		return true
 	}
-	if roles["operator"] && (read || name == "PutTask" || name == "DeleteTask" || name == "PutWorkload" || name == "PutService" || name == "Schedule") {
+	if roles["operator"] && (read || name == "PutTask" || name == "DeleteTask" || name == "PutWorkload" || name == "PutService" || name == "Schedule" || name == "DrainNode") {
 		return true
 	}
 	if roles["node"] && (name == "PutNode" || name == "PutEvent") {
