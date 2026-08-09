@@ -321,6 +321,13 @@ func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed,
 	for _, p := range a.HostPorts {
 		ports = append(ports, containernetwork.PortMapping{Protocol: "tcp", HostPort: p, ContainerPort: p})
 	}
+	policy := containernetwork.NetworkPolicy{DefaultDenyIngress: a.NetworkPolicy.DefaultDenyIngress, DefaultDenyEgress: a.NetworkPolicy.DefaultDenyEgress}
+	for _, rule := range a.NetworkPolicy.Ingress {
+		policy.Ingress = append(policy.Ingress, containernetwork.NetworkRule{CIDR: rule.CIDR, Protocol: rule.Protocol, Ports: append([]uint16(nil), rule.Ports...)})
+	}
+	for _, rule := range a.NetworkPolicy.Egress {
+		policy.Egress = append(policy.Egress, containernetwork.NetworkRule{CIDR: rule.CIDR, Protocol: rule.Protocol, Ports: append([]uint16(nil), rule.Ports...)})
+	}
 	if err := containernetwork.ConfigureDNS(prepared.RootFS, containernetwork.HostNameservers()); err != nil {
 		return Observed{}, err
 	}
@@ -331,7 +338,7 @@ func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed,
 	}
 	cfg := process.Config{RootFS: prepared.RootFS, Argv: argv, Hostname: a.TaskID, StateDir: d.stateRoot, ContainerID: id, Env: append([]string(nil), prepared.Image.Config.Env...), SecretEnv: secretEnv, WorkingDir: prepared.Image.Config.WorkingDir, Resources: cgroup.Resources{CPUCores: float64(a.Resources.CPUMilli) / 1000, MemoryBytes: a.Resources.MemoryBytes}, Stdout: logFile, Stderr: logFile}
 	cfg.ConfigureNetwork = func(pid int) error {
-		_, err := d.network.EnsureWithPorts(context.Background(), id, pid, ports)
+		_, err := d.network.EnsureWithPolicy(context.Background(), id, pid, ports, policy)
 		return err
 	}
 	stop := make(chan os.Signal, 1)

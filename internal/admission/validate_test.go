@@ -28,3 +28,22 @@ func TestWorkloadAndServiceBounds(t *testing.T) {
 		t.Fatal("empty selector accepted")
 	}
 }
+
+func TestNetworkPolicyValidation(t *testing.T) {
+	valid := api.Task{Metadata: api.Metadata{ID: "task"}, Spec: api.TaskSpec{Image: "app", NetworkPolicy: api.NetworkPolicy{DefaultDenyEgress: true, Egress: []api.NetworkRule{{CIDR: "10.64.0.0/16", Protocol: "tcp", Ports: []uint16{443}}}}}}
+	if err := Task(valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, policy := range []api.NetworkPolicy{
+		{Egress: []api.NetworkRule{{CIDR: "10.0.0.0/8"}}},
+		{DefaultDenyEgress: true, Egress: []api.NetworkRule{{CIDR: "10.0.0.1/8"}}},
+		{DefaultDenyEgress: true, Egress: []api.NetworkRule{{CIDR: "0.0.0.0/0", Protocol: "icmp", Ports: []uint16{80}}}},
+		{DefaultDenyIngress: true, Ingress: []api.NetworkRule{{CIDR: "0.0.0.0/0", Protocol: "sctp"}}},
+	} {
+		invalid := valid
+		invalid.Spec.NetworkPolicy = policy
+		if err := Task(invalid); err == nil {
+			t.Fatalf("accepted network policy %+v", policy)
+		}
+	}
+}

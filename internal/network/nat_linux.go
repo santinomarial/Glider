@@ -43,6 +43,9 @@ func (m *Manager) reconcileNAT() error {
 	post := conn.AddChain(&nftables.Chain{Name: "postrouting", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPostrouting, Priority: nftables.ChainPriorityNATSource})
 	pre := conn.AddChain(&nftables.Chain{Name: "prerouting", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityNATDest})
 	output := conn.AddChain(&nftables.Chain{Name: "output", Table: table, Type: nftables.ChainTypeNAT, Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityNATDest})
+	accept := nftables.ChainPolicyAccept
+	forward := conn.AddChain(&nftables.Chain{Name: "forward", Table: table, Type: nftables.ChainTypeFilter, Hooknum: nftables.ChainHookForward, Priority: nftables.ChainPriorityFilter, Policy: &accept})
+	addPolicyRules(conn, table, forward, endpoints)
 	network := m.pool.Subnet().Masked().Addr().As4()
 	maskBits := m.pool.Subnet().Bits()
 	mask := binary.BigEndian.Uint32([]byte{255, 255, 255, 255}) << uint(32-maskBits)

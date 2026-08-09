@@ -127,6 +127,18 @@ type TaskSpec struct {
 	RestartPolicy    RestartPolicy     `json:"restart_policy,omitempty"`
 	Health           HealthSpec        `json:"health,omitempty"`
 	Secrets          []SecretEnvRef    `json:"secrets,omitempty"`
+	NetworkPolicy    NetworkPolicy     `json:"network_policy,omitempty"`
+}
+type NetworkPolicy struct {
+	DefaultDenyIngress bool          `json:"default_deny_ingress,omitempty"`
+	DefaultDenyEgress  bool          `json:"default_deny_egress,omitempty"`
+	Ingress            []NetworkRule `json:"ingress,omitempty"`
+	Egress             []NetworkRule `json:"egress,omitempty"`
+}
+type NetworkRule struct {
+	CIDR     string   `json:"cidr"`
+	Protocol string   `json:"protocol,omitempty"`
+	Ports    []uint16 `json:"ports,omitempty"`
 }
 type SecretEnvRef struct {
 	SecretID string `json:"secret_id"`
@@ -230,5 +242,6 @@ type Assignment struct {
 	Health        HealthSpec     `json:"health,omitempty"`
 	HostPorts     []uint16       `json:"host_ports,omitempty"`
 	Secrets       []SecretEnvRef `json:"secrets,omitempty"`
+	NetworkPolicy NetworkPolicy  `json:"network_policy,omitempty"`
 	CreatedAt     time.Time      `json:"created_at"`
 }

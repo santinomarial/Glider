@@ -4,10 +4,12 @@ package admission
 import (
 	"errors"
 	"fmt"
-	"github.com/santinomarial/glider/internal/api"
+	"net/netip"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/santinomarial/glider/internal/api"
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$`)
@@ -94,6 +96,35 @@ func taskSpec(v api.TaskSpec) error {
 		}
 		if probe.FailureThreshold < 0 || probe.FailureThreshold > 1000 || probe.SuccessThreshold < 0 || probe.SuccessThreshold > 1000 {
 			return errors.New("probe thresholds are out of bounds")
+		}
+	}
+	return networkPolicy(v.NetworkPolicy)
+}
+
+func networkPolicy(policy api.NetworkPolicy) error {
+	if len(policy.Ingress) > 64 || len(policy.Egress) > 64 {
+		return errors.New("network policy exceeds 64 rules per direction")
+	}
+	if len(policy.Ingress) > 0 && !policy.DefaultDenyIngress || len(policy.Egress) > 0 && !policy.DefaultDenyEgress {
+		return errors.New("network policy allow rules require default deny in that direction")
+	}
+	for _, rule := range append(append([]api.NetworkRule(nil), policy.Ingress...), policy.Egress...) {
+		prefix, err := netip.ParsePrefix(rule.CIDR)
+		if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() {
+			return fmt.Errorf("network policy CIDR %q must be a canonical IPv4 prefix", rule.CIDR)
+		}
+		if rule.Protocol != "" && rule.Protocol != "tcp" && rule.Protocol != "udp" && rule.Protocol != "icmp" {
+			return fmt.Errorf("unsupported network policy protocol %q", rule.Protocol)
+		}
+		if len(rule.Ports) > 64 || (rule.Protocol != "tcp" && rule.Protocol != "udp") && len(rule.Ports) > 0 {
+			return errors.New("network policy ports require tcp or udp and are limited to 64")
+		}
+		seen := map[uint16]bool{}
+		for _, port := range rule.Ports {
+			if port == 0 || seen[port] {
+				return errors.New("network policy ports must be non-zero and unique")
+			}
+			seen[port] = true
 		}
 	}
 	return nil

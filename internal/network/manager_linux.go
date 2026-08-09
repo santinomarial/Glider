@@ -34,6 +34,7 @@ type Endpoint struct {
 	HostVeth string        `json:"host_veth"`
 	Phase    string        `json:"phase"`
 	Ports    []PortMapping `json:"ports,omitempty"`
+	Policy   NetworkPolicy `json:"policy,omitempty"`
 }
 type PortMapping struct {
 	Protocol      string `json:"protocol"`
@@ -69,6 +70,9 @@ func (m *Manager) Ensure(ctx context.Context, owner string, initPID int) (Endpoi
 	return m.EnsureWithPorts(ctx, owner, initPID, nil)
 }
 func (m *Manager) EnsureWithPorts(ctx context.Context, owner string, initPID int, ports []PortMapping) (Endpoint, error) {
+	return m.EnsureWithPolicy(ctx, owner, initPID, ports, NetworkPolicy{})
+}
+func (m *Manager) EnsureWithPolicy(ctx context.Context, owner string, initPID int, ports []PortMapping, policy NetworkPolicy) (Endpoint, error) {
 	if err := ctx.Err(); err != nil {
 		return Endpoint{}, err
 	}
@@ -83,6 +87,9 @@ func (m *Manager) EnsureWithPorts(ctx context.Context, owner string, initPID int
 	if err := m.validatePortConflicts(owner, ports); err != nil {
 		return Endpoint{}, err
 	}
+	if err := validateNetworkPolicy(policy); err != nil {
+		return Endpoint{}, err
+	}
 	allocation, err := m.pool.Ensure(owner)
 	if err != nil {
 		return Endpoint{}, err
@@ -91,7 +98,7 @@ func (m *Manager) EnsureWithPorts(ctx context.Context, owner string, initPID int
 	if err := validatePorts(ports); err != nil {
 		return Endpoint{}, err
 	}
-	ep := Endpoint{Owner: owner, Address: allocation.Address, Gateway: m.pool.Gateway(), HostVeth: host, Phase: "CREATING", Ports: append([]PortMapping(nil), ports...)}
+	ep := Endpoint{Owner: owner, Address: allocation.Address, Gateway: m.pool.Gateway(), HostVeth: host, Phase: "CREATING", Ports: append([]PortMapping(nil), ports...), Policy: policy}
 	if err := m.save(ep); err != nil {
 		_ = m.pool.Release(owner)
 		return Endpoint{}, err
