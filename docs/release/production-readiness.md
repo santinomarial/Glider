@@ -16,7 +16,7 @@ Passing unit tests alone does not close a row.
 | Backup and disaster recovery | P0 | None | Automated etcd snapshot, verified restore, recovery-point/runbook test, and corrupt-backup rejection |
 | Upgrades and schema migration | P0 | No compatibility or migration machinery | Version-skew policy, forward/backward migration, canary upgrade, and rollback test |
 | Node lifecycle | P0 | Lease fencing exists; join/drain UX incomplete | Authenticated join, cordon/drain, safe removal, certificate renewal, and replacement tests |
-| Storage and disk pressure | P0 | Content store is durable; no GC/pressure controller | Reference-safe image/snapshot GC, disk thresholds, eviction policy, and exhaustion recovery |
+| Storage and disk pressure | P0 | Reference-safe image GC, periodic reclamation, and launch admission thresholds implemented | Workload eviction policy and real disk-exhaustion recovery qualification |
 | Network policy and exposure | P0 | Overlay/NAT/service DNS exist | Ingress/egress policy, service data plane, firewall persistence, MTU validation, and multi-node tests |
 | Observability | P0 | Basic metrics and durable event objects | Structured process logs, bounded event retention, latency/error/saturation metrics, alerts, dashboards, and trace correlation |
 | Packaging and host integration | P0 | Source-run scripts only | Reproducible signed binaries/packages, systemd units, dedicated users/directories, config validation, install/uninstall/upgrade tests |

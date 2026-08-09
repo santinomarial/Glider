@@ -38,9 +38,14 @@ type RuntimeDriver struct {
 	network      *containernetwork.Manager
 	startTimeout time.Duration
 	execHelper   string
+	gcGrace      time.Duration
+	minFreeBytes uint64
+	minFreePct   float64
 }
 
 const maxLogBytes = 64 << 20
+
+var ErrDiskPressure = errors.New("node disk pressure")
 
 func (d *RuntimeDriver) EnsureOverlay(localTunnel string, peers []api.Node, mtu int) error {
 	local, err := netip.ParseAddr(localTunnel)
@@ -145,7 +150,54 @@ func NewRuntimeDriver(dataRoot, networkCIDR string, insecureRegistry bool) (*Run
 	if err != nil {
 		return nil, err
 	}
-	return &RuntimeDriver{dataRoot: dataRoot, stateRoot: filepath.Join(dataRoot, "containers"), images: images, network: network, startTimeout: 30 * time.Second, execHelper: "/usr/libexec/glider-exec"}, nil
+	return &RuntimeDriver{dataRoot: dataRoot, stateRoot: filepath.Join(dataRoot, "containers"), images: images, network: network, startTimeout: 30 * time.Second, execHelper: "/usr/libexec/glider-exec", gcGrace: 24 * time.Hour, minFreeBytes: 2 << 30, minFreePct: 10}, nil
+}
+
+func (d *RuntimeDriver) ConfigureStorage(grace time.Duration, minFreeBytes uint64, minFreePercent float64) error {
+	if grace < 0 || minFreePercent < 0 || minFreePercent > 100 {
+		return errors.New("invalid storage policy")
+	}
+	d.gcGrace, d.minFreeBytes, d.minFreePct = grace, minFreeBytes, minFreePercent
+	return nil
+}
+
+func (d *RuntimeDriver) CollectImages(ctx context.Context) (imagemanager.GCResult, error) {
+	return d.images.Collect(ctx, d.gcGrace)
+}
+
+func (d *RuntimeDriver) DiskUsage() (total, available uint64, pressured bool, err error) {
+	var stat syscall.Statfs_t
+	if err = syscall.Statfs(d.dataRoot, &stat); err != nil {
+		return 0, 0, false, fmt.Errorf("stat data filesystem: %w", err)
+	}
+	total = stat.Blocks * uint64(stat.Bsize)
+	available = stat.Bavail * uint64(stat.Bsize)
+	return total, available, diskPressured(total, available, d.minFreeBytes, d.minFreePct), nil
+}
+
+func diskPressured(total, available, minBytes uint64, minPercent float64) bool {
+	if available < minBytes {
+		return true
+	}
+	return total > 0 && float64(available)*100/float64(total) < minPercent
+}
+
+func (d *RuntimeDriver) ensureDiskCapacity(ctx context.Context) error {
+	_, _, pressured, err := d.DiskUsage()
+	if err != nil || !pressured {
+		return err
+	}
+	if _, err := d.CollectImages(ctx); err != nil {
+		return fmt.Errorf("%w: collection failed: %v", ErrDiskPressure, err)
+	}
+	_, available, pressured, err := d.DiskUsage()
+	if err != nil {
+		return err
+	}
+	if pressured {
+		return fmt.Errorf("%w: %d bytes available", ErrDiskPressure, available)
+	}
+	return nil
 }
 func (d *RuntimeDriver) SetExecHelper(path string) error {
 	if !filepath.IsAbs(path) {
@@ -217,6 +269,9 @@ func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed,
 	}
 	if a.Image == "" {
 		return Observed{}, errors.New("assignment image is required")
+	}
+	if err := d.ensureDiskCapacity(ctx); err != nil {
+		return Observed{}, err
 	}
 	prepared, err := d.images.Prepare(ctx, a.Image, id)
 	if err != nil {

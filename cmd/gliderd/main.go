@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -37,6 +38,9 @@ func main() {
 	var insecureEtcd bool
 	var operationsListen, tlsCert, tlsKey, clientCA string
 	var execHelper string
+	var imageGCInterval, imageGCGrace time.Duration
+	var minFreeBytes uint64
+	var minFreePercent float64
 	var showVersion bool
 	flag.StringVar(&endpoints, "etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	flag.StringVar(&nodeID, "node-id", "", "this node's stable ID (required)")
@@ -57,6 +61,10 @@ func main() {
 	flag.StringVar(&tlsKey, "tls-key", "", "node server TLS private key")
 	flag.StringVar(&clientCA, "client-ca", "", "CA used to authenticate operations clients")
 	flag.StringVar(&execHelper, "exec-helper", "/usr/libexec/glider-exec", "absolute path to hardened exec helper")
+	flag.DurationVar(&imageGCInterval, "image-gc-interval", 15*time.Minute, "interval for reference-safe image garbage collection (zero disables periodic GC)")
+	flag.DurationVar(&imageGCGrace, "image-gc-grace", 24*time.Hour, "minimum age before unreferenced image data is reclaimed")
+	flag.Uint64Var(&minFreeBytes, "storage-min-free-bytes", 2<<30, "refuse new launches below this available space after GC")
+	flag.Float64Var(&minFreePercent, "storage-min-free-percent", 10, "refuse new launches below this available filesystem percentage after GC")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
 	if showVersion {
@@ -94,6 +102,12 @@ func main() {
 	}
 	if err := driver.SetExecHelper(execHelper); err != nil {
 		fatal(err)
+	}
+	if err := driver.ConfigureStorage(imageGCGrace, minFreeBytes, minFreePercent); err != nil {
+		fatal(err)
+	}
+	if imageGCInterval < 0 {
+		fatal(errors.New("image GC interval cannot be negative"))
 	}
 	if operationsListen != "" {
 		creds, err := transport.ServerCredentials(tlsCert, tlsKey, clientCA)
@@ -136,6 +150,9 @@ func main() {
 	go func() { errs <- daemon.Run(runCtx) }()
 	go func() { _ = agent.NewHealthDaemon(nodeID, store, driver, time.Second).Run(runCtx) }()
 	go reconcileOverlay(runCtx, nodeID, store, driver, resync)
+	if imageGCInterval > 0 {
+		go collectImages(runCtx, driver, imageGCInterval)
+	}
 	go func() {
 		errs <- leaseManager.Run(ctx, func(context.Context) error {
 			cancelRun()
@@ -148,6 +165,23 @@ func main() {
 	cancelRun()
 	if err != nil && ctx.Err() == nil {
 		fatal(err)
+	}
+}
+
+func collectImages(ctx context.Context, driver *agent.RuntimeDriver, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if result, err := driver.CollectImages(ctx); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "gliderd: image collection failed: %v\n", err)
+		} else if result.BytesReclaimed > 0 {
+			fmt.Fprintf(os.Stderr, "gliderd: image collection reclaimed %d bytes (%d blobs, %d layers)\n", result.BytesReclaimed, result.BlobsRemoved, result.LayersRemoved)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 func split(value string) []string {
