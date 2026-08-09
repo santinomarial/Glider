@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GLIDER_SOURCE_COMMIT="${GLIDER_SOURCE_COMMIT:-$(git -C "${REPO_ROOT}" rev-parse HEAD)}"
 export GLIDER_SOURCE_COMMIT
 if [ "$(uname -s)" != "Linux" ]; then
-	exec docker run --rm --privileged --platform "${DOCKER_PLATFORM}" -v "${REPO_ROOT}:/source:ro" --mount type=volume,dst=/work -w /work -e GLIDER_SOURCE_COMMIT -e GLIDER_RUNTIME_PERFORMANCE_ITERATIONS -e GLIDER_RUNTIME_LIFECYCLE_P99_MAX "${DOCKER_IMAGE}" bash -c 'tar --exclude=./.git --exclude=./dist --exclude=./work -C /source -cf - . | tar -C /work -xf - && exec bash scripts/benchmark-runtime.sh'
+	exec docker run --rm --privileged --platform "${DOCKER_PLATFORM}" -v "${REPO_ROOT}:/source:ro" --mount type=volume,dst=/work -w /work -e GLIDER_SOURCE_COMMIT -e GLIDER_RUNTIME_PERFORMANCE_ITERATIONS -e GLIDER_RUNTIME_LIFECYCLE_P99_MAX -e GLIDER_COLD_IMAGE_PERFORMANCE_ITERATIONS -e GLIDER_COLD_IMAGE_LIFECYCLE_P99_MAX "${DOCKER_IMAGE}" bash -c 'tar --exclude=./.git --exclude=./dist --exclude=./work -C /source -cf - . | tar -C /work -xf - && exec bash scripts/benchmark-runtime.sh'
 fi
 if [ "$(id -u)" -ne 0 ]; then
 	echo "error: runtime benchmark requires root and cgroup v2" >&2
@@ -27,4 +27,4 @@ cd "${REPO_ROOT}"
 export TMPDIR="${REPO_ROOT}/work/runtime-benchmark-tmp"
 mkdir -p "${TMPDIR}"
 export GLIDER_RUNTIME_PERFORMANCE=1
-go test -v -count=1 -timeout 180s ./test/integration/runtime -run '^TestRuntimeLifecyclePerformance$'
+go test -v -count=1 -timeout 300s ./test/integration/runtime -run '^Test(RuntimeLifecycle|ColdImageLifecycle)Performance$'

@@ -26,7 +26,12 @@ minimal root filesystem, reports nearest-rank p50/p95/p99 and throughput as
 `glider.performance/v1`, and fails above 500 milliseconds p99. This qualifies
 warm-rootfs create/start/workload-exit/cleanup on one host. It does not include
 cold image pull/unpack, registry latency, or multi-host scheduling and must not
-be represented as evidence for those environments.
+be represented as evidence for those environments. The same command also runs
+10 cold, uncached pulls from an isolated local OCI registry through verified
+download, unpack, OverlayFS snapshot, workload execution, and cleanup, failing
+above two seconds p99. This isolates Glider's cold-image pipeline from WAN and
+third-party registry variability; release-environment registry latency remains
+a separate qualification.
 
 Keep etcd database usage below 70%, node disks below the configured pressure
 threshold, API p99 below one second, and non-OK request rate below 5%. Add
