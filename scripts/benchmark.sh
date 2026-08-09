@@ -4,7 +4,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if ! command -v go >/dev/null 2>&1; then
 	exec docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work \
 		-e GLIDER_SCHEDULE_NS_MAX -e GLIDER_SCHEDULE_BYTES_MAX -e GLIDER_LOOKUP_NS_MAX -e GLIDER_LOOKUP_BYTES_MAX \
-		golang:1.26 sh -c 'tar -C /src -cf - . | tar -C /work -xf - && exec bash scripts/benchmark.sh'
+		golang:1.26 sh -c 'tar --exclude=./dist --exclude=./work -C /src -cf - . | tar -C /work -xf - && exec bash scripts/benchmark.sh'
 fi
 cd "${REPO_ROOT}"
 SCHEDULE_NS_MAX="${GLIDER_SCHEDULE_NS_MAX:-500000}"
