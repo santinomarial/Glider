@@ -24,3 +24,10 @@ The release test suite starts a real three-member embedded-etcd cluster, runs
 two competing controller replicas, terminates the current etcd Raft leader,
 and verifies that the surviving quorum elects a replacement, accepts a durable
 write, and never observes more than one active controller authority.
+
+`make ha-test` adds a packaged-process gate. It builds the signed release,
+starts two extracted control-plane binaries against mutually authenticated
+etcd, mutates state through one API replica, reads the same revision through
+the other, identifies controller authority from the lowest-revision election
+campaign key, terminates that exact process, verifies the survivor still serves
+the API, and waits for authority transfer before completing another mutation.
