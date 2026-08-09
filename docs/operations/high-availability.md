@@ -19,3 +19,8 @@ changes repeatedly without an operator action or etcd incident.
 
 Replicas must use identical schema, quota, PKI trust, and secret-encryption key
 configuration. A mismatch fails startup rather than creating split policy.
+
+The release test suite starts a real three-member embedded-etcd cluster, runs
+two competing controller replicas, terminates the current etcd Raft leader,
+and verifies that the surviving quorum elects a replacement, accepts a durable
+write, and never observes more than one active controller authority.

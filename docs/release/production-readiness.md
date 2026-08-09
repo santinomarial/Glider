@@ -12,7 +12,7 @@ Passing unit tests alone does not close a row.
 | Node operations | P0 | `logs`, `exec`, `stats` fail explicitly | Bounded authenticated streaming, generation fencing, terminal resize/cancel, and audit records |
 | API admission | P0 | Central validation, transport limits, rate limits, atomic quotas, durable mutation idempotency keys, and admission fuzz target exist | Sustained release-candidate fuzz evidence |
 | Secret handling | P0 | Encrypted objects, redaction, node/generation-fenced delivery, ephemeral injection, audited access, and rotation/reassignment mTLS test exist | Release-candidate key-loss and corrupt-ciphertext recovery exercise |
-| Control-plane HA | P0 | Multi-replica APIs and lease-elected controller authority with leader-loss transfer test exist | Real three-member etcd member-loss and multi-process API failover qualification |
+| Control-plane HA | P0 | Multi-replica APIs, lease-elected controller authority, leader-loss transfer, and real three-member etcd Raft-leader-loss qualification exist | Packaged multi-process API failover qualification |
 | Backup and disaster recovery | P0 | None | Automated etcd snapshot, verified restore, recovery-point/runbook test, and corrupt-backup rejection |
 | Upgrades and schema migration | P0 | Persisted compatibility bounds, mutexed crash-resumable v1→v2 migration, guarded v2→v1 rollback, and concurrent migration test exist | Packaged-binary canary upgrade and rollback qualification |
 | Node lifecycle | P0 | Lease fencing, cordon/drain, revision-safe task deletion, and finalizer-style workload deletion exist | Authenticated join, safe node removal, automated certificate renewal, and replacement tests |
