@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -96,7 +98,7 @@ func run(ctx context.Context, c client, args []string) error {
 		if *id == "" || *image == "" {
 			return errors.New("run requires --id and --image")
 		}
-		return printCall(ctx, c, "PutTask", api.Task{Metadata: api.Metadata{ID: *id}, Spec: api.TaskSpec{Image: *image, Command: fs.Args()}, Status: api.TaskStatus{Phase: api.TaskPending}})
+		return printCall(ctx, c, "PutTask", api.Task{Metadata: api.Metadata{ID: *id, IdempotencyKey: newIdempotencyKey()}, Spec: api.TaskSpec{Image: *image, Command: fs.Args()}, Status: api.TaskStatus{Phase: api.TaskPending}})
 	case "stop":
 		if len(args) != 2 {
 			return errors.New("usage: glider stop TASK")
@@ -123,6 +125,7 @@ func run(ctx context.Context, c client, args []string) error {
 		if err = json.Unmarshal(data, &workload); err != nil {
 			return err
 		}
+		workload.Metadata.IdempotencyKey = newIdempotencyKey()
 		return printCall(ctx, c, "PutWorkload", workload)
 	case "scale":
 		if len(args) != 3 {
@@ -143,6 +146,7 @@ func run(ctx context.Context, c client, args []string) error {
 		for _, w := range workloads {
 			if w.Metadata.ID == args[1] || w.Metadata.Name == args[1] {
 				w.Spec.Replicas = n
+				w.Metadata.IdempotencyKey = newIdempotencyKey()
 				return printCall(ctx, c, "PutWorkload", w)
 			}
 		}
@@ -366,6 +370,13 @@ func env(k, fallback string) string {
 		return v
 	}
 	return fallback
+}
+func newIdempotencyKey() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		fatal(fmt.Errorf("generate idempotency key: %w", err))
+	}
+	return hex.EncodeToString(value[:])
 }
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|delete|nodes|drain|ps|inspect|logs|exec|stats|events")

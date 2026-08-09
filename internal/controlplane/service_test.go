@@ -3,6 +3,7 @@ package controlplane
 import (
 	"testing"
 
+	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/transport"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -31,5 +32,14 @@ func TestRequiredRevisionRejectsMissingFractionalAndNonPositive(t *testing.T) {
 	request, _ := structpb.NewStruct(map[string]any{"revision": float64(42)})
 	if got, err := requiredRevision(request, "revision"); err != nil || got != 42 {
 		t.Fatalf("revision = %d, %v", got, err)
+	}
+}
+
+func TestMutationRequiresBoundedIdempotencyKey(t *testing.T) {
+	if err := requireIdempotencyKey(api.Metadata{}); err == nil {
+		t.Fatal("empty idempotency key accepted")
+	}
+	if err := requireIdempotencyKey(api.Metadata{IdempotencyKey: "request-1"}); err != nil {
+		t.Fatal(err)
 	}
 }

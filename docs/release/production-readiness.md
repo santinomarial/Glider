@@ -10,7 +10,7 @@ Passing unit tests alone does not close a row.
 | API identity and encryption | P0 | CLI uses plaintext gRPC | Mutual TLS, certificate rotation, authenticated principals, and negative tests |
 | Authorization | P0 | No policy enforcement | Deny-by-default RBAC for mutations, exec, logs, stats, node registration, and events |
 | Node operations | P0 | `logs`, `exec`, `stats` fail explicitly | Bounded authenticated streaming, generation fencing, terminal resize/cancel, and audit records |
-| API admission | P0 | Central validation, transport limits, per-principal rate limits, and CAS-backed cluster quotas exist | Mutation idempotency keys and admission fuzz corpus |
+| API admission | P0 | Central validation, transport limits, rate limits, atomic quotas, durable mutation idempotency keys, and admission fuzz target exist | Sustained release-candidate fuzz evidence |
 | Secret handling | P0 | No workload secret model | Encrypted-at-rest secret objects, redaction, least-privilege delivery, and rotation |
 | Control-plane HA | P0 | One process is demonstrated | Three-member etcd and multiple API/controller instances pass leader/failover tests without duplicate authority |
 | Backup and disaster recovery | P0 | None | Automated etcd snapshot, verified restore, recovery-point/runbook test, and corrupt-backup rejection |

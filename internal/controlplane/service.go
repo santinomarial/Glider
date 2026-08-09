@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"google.golang.org/grpc"
@@ -48,7 +49,19 @@ func (s *Service) PutTask(ctx context.Context, in *structpb.Struct) (*structpb.S
 	if err := admission.Task(task); err != nil {
 		return nil, invalid(err)
 	}
+	if err := requireIdempotencyKey(task.Metadata); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutTask(ctx, task, task.Metadata.Revision)
+	if errors.Is(err, storeapi.ErrConflict) {
+		current, getErr := s.store.GetTask(ctx, task.Metadata.ID)
+		if getErr == nil && current.Metadata.IdempotencyKey == task.Metadata.IdempotencyKey {
+			if !reflect.DeepEqual(current.Spec, task.Spec) {
+				return nil, status.Error(codes.AlreadyExists, "idempotency key was reused for different task state")
+			}
+			return encode(current, nil)
+		}
+	}
 	return encode(saved, mapError(err))
 }
 func (s *Service) DeleteTask(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
@@ -138,6 +151,9 @@ func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*struct
 	if err := admission.Workload(workload); err != nil {
 		return nil, invalid(err)
 	}
+	if err := requireIdempotencyKey(workload.Metadata); err != nil {
+		return nil, invalid(err)
+	}
 	if workload.Metadata.Revision > 0 {
 		current, err := s.store.GetWorkload(ctx, workload.Metadata.ID)
 		if err != nil {
@@ -148,6 +164,15 @@ func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*struct
 		}
 	}
 	saved, err := s.store.PutWorkload(ctx, workload, workload.Metadata.Revision)
+	if errors.Is(err, storeapi.ErrConflict) {
+		current, getErr := s.store.GetWorkload(ctx, workload.Metadata.ID)
+		if getErr == nil && current.Metadata.IdempotencyKey == workload.Metadata.IdempotencyKey {
+			if !reflect.DeepEqual(current.Spec, workload.Spec) {
+				return nil, status.Error(codes.AlreadyExists, "idempotency key was reused for different workload state")
+			}
+			return encode(current, nil)
+		}
+	}
 	return encode(saved, mapError(err))
 }
 func (s *Service) DeleteWorkload(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
@@ -192,7 +217,19 @@ func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structp
 	if err := admission.Service(service); err != nil {
 		return nil, invalid(err)
 	}
+	if err := requireIdempotencyKey(service.Metadata); err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
+	if errors.Is(err, storeapi.ErrConflict) {
+		current, getErr := s.store.GetService(ctx, service.Metadata.ID)
+		if getErr == nil && current.Metadata.IdempotencyKey == service.Metadata.IdempotencyKey {
+			if !reflect.DeepEqual(current.Spec, service.Spec) {
+				return nil, status.Error(codes.AlreadyExists, "idempotency key was reused for different service state")
+			}
+			return encode(current, nil)
+		}
+	}
 	return encode(saved, mapError(err))
 }
 func (s *Service) DeleteService(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
@@ -290,6 +327,12 @@ func requiredRevision(in *structpb.Struct, key string) (int64, error) {
 	return int64(value), nil
 }
 func invalid(err error) error { return status.Error(codes.InvalidArgument, err.Error()) }
+func requireIdempotencyKey(metadata api.Metadata) error {
+	if metadata.IdempotencyKey == "" {
+		return errors.New("metadata.idempotency_key is required for mutations")
+	}
+	return nil
+}
 func nodeCanMutate(principal transport.Principal, nodeID string) bool {
 	return !principal.Roles["node"] || principal.Name == nodeID
 }

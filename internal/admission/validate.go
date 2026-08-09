@@ -19,6 +19,9 @@ func metadata(m api.Metadata) error {
 	if len(m.Name) > 253 {
 		return errors.New("metadata.name exceeds 253 characters")
 	}
+	if len(m.IdempotencyKey) > 128 {
+		return errors.New("metadata.idempotency_key exceeds 128 characters")
+	}
 	return nil
 }
 func labels(values map[string]string) error {

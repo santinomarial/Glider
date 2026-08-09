@@ -210,6 +210,21 @@ func (s *Store) GetWorkload(ctx context.Context, id string) (api.Workload, error
 	workload.Metadata.Revision = kv.ModRevision
 	return workload, nil
 }
+func (s *Store) GetService(ctx context.Context, id string) (api.Service, error) {
+	var service api.Service
+	if !validID(id) {
+		return service, storeapi.ErrNotFound
+	}
+	kv, err := getOne(ctx, s.client, s.key("services", id))
+	if err != nil {
+		return service, err
+	}
+	if err := json.Unmarshal(kv.Value, &service); err != nil {
+		return service, fmt.Errorf("decode service %s: %w", id, err)
+	}
+	service.Metadata.Revision = kv.ModRevision
+	return service, nil
+}
 func (s *Store) ListTasks(ctx context.Context) ([]api.Task, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("tasks"), clientv3.WithPrefix())
 	if err != nil {

@@ -12,6 +12,7 @@ type Metadata struct {
 	Revision          int64      `json:"revision,omitempty"`
 	Generation        int64      `json:"generation,omitempty"`
 	DeletionTimestamp *time.Time `json:"deletion_timestamp,omitempty"`
+	IdempotencyKey    string     `json:"idempotency_key,omitempty"`
 }
 type Resources struct {
 	CPUMilli    int64 `json:"cpu_milli"`
