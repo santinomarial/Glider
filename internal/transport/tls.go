@@ -25,7 +25,7 @@ func ServerCredentials(certFile, keyFile, clientCAFile string) (credentials.Tran
 	return credentials.NewTLS(config), nil
 }
 func ServerTLSConfig(certFile, keyFile, clientCAFile string) (*tls.Config, error) {
-	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+	certificate, err := newCertificateReloader(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load server certificate: %w", err)
 	}
@@ -33,10 +33,10 @@ func ServerTLSConfig(certFile, keyFile, clientCAFile string) (*tls.Config, error
 	if err != nil {
 		return nil, fmt.Errorf("load client CA: %w", err)
 	}
-	return &tls.Config{Certificates: []tls.Certificate{certificate}, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert, MinVersion: tls.VersionTLS13}, nil
+	return &tls.Config{GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return certificate.Certificate() }, ClientCAs: pool, ClientAuth: tls.RequireAndVerifyClientCert, MinVersion: tls.VersionTLS13}, nil
 }
 func ClientCredentials(certFile, keyFile, caFile, serverName string) (credentials.TransportCredentials, error) {
-	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+	certificate, err := newCertificateReloader(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load client certificate: %w", err)
 	}
@@ -47,10 +47,10 @@ func ClientCredentials(certFile, keyFile, caFile, serverName string) (credential
 	if strings.TrimSpace(serverName) == "" {
 		return nil, errors.New("TLS server name is required")
 	}
-	return credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{certificate}, RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS13}), nil
+	return credentials.NewTLS(&tls.Config{GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return certificate.Certificate() }, RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS13}), nil
 }
 func EtcdTLSConfig(certFile, keyFile, caFile, serverName string) (*tls.Config, error) {
-	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+	certificate, err := newCertificateReloader(certFile, keyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load etcd client certificate: %w", err)
 	}
@@ -61,7 +61,7 @@ func EtcdTLSConfig(certFile, keyFile, caFile, serverName string) (*tls.Config, e
 	if strings.TrimSpace(serverName) == "" {
 		return nil, errors.New("etcd TLS server name is required")
 	}
-	return &tls.Config{Certificates: []tls.Certificate{certificate}, RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS13}, nil
+	return &tls.Config{GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return certificate.Certificate() }, RootCAs: pool, ServerName: serverName, MinVersion: tls.VersionTLS13}, nil
 }
 func loadPool(file string) (*x509.CertPool, error) {
 	data, err := os.ReadFile(file)
