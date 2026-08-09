@@ -1,4 +1,4 @@
-.PHONY: test security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark production-gate demo release verify-release
+.PHONY: test security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark production-gate verify-environment demo release verify-release
 
 test:
 	scripts/test-linux-runtime.sh
@@ -29,6 +29,9 @@ benchmark:
 
 production-gate:
 	scripts/production-gate.sh
+
+verify-environment:
+	scripts/verify-environment-evidence.sh "$(EVIDENCE_DIR)"
 
 demo:
 	scripts/demo.sh

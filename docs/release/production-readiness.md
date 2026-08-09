@@ -33,6 +33,10 @@ compatibility matrix, migration result, and disaster-recovery result. The
 workflow fails closed if a P0 gate is missing, skipped, flaky, or relies only
 on a manual assertion.
 
+`scripts/production-release.sh` additionally requires the independently signed
+release-environment evidence contract in `environment-evidence.md`. A local
+operator cannot self-assert or bypass these external P0 results.
+
 ## Scope boundary
 
 “Production complete” means safe and supportable for Glider's documented
