@@ -47,6 +47,11 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	requestRate := flag.Int("request-rate", 50, "allowed requests per second per authenticated principal")
 	requestBurst := flag.Int("request-burst", 100, "request burst per authenticated principal")
+	quotaTasks := flag.Int64("quota-tasks", 10000, "maximum cluster tasks")
+	quotaWorkloads := flag.Int64("quota-workloads", 1000, "maximum cluster workloads")
+	quotaServices := flag.Int64("quota-services", 1000, "maximum cluster services")
+	quotaCPUMilli := flag.Int64("quota-cpu-milli", 1000000, "maximum aggregate requested CPU in millicores")
+	quotaMemoryBytes := flag.Int64("quota-memory-bytes", 1<<50, "maximum aggregate requested memory")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
@@ -71,6 +76,9 @@ func main() {
 	defer client.Close()
 	store, err := etcdstore.New(client, *clusterID)
 	if err != nil {
+		fatal(err)
+	}
+	if err := store.ConfigureQuota(ctx, etcdstore.QuotaLimits{Tasks: *quotaTasks, Workloads: *quotaWorkloads, Services: *quotaServices, Resources: api.Resources{CPUMilli: *quotaCPUMilli, MemoryBytes: *quotaMemoryBytes}}); err != nil {
 		fatal(err)
 	}
 	service, err := controlplane.New(store)

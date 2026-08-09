@@ -301,7 +301,7 @@ func mapError(err error) error {
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, storeapi.ErrConflict), errors.Is(err, storeapi.ErrAlreadyAssigned):
 		return status.Error(codes.Aborted, err.Error())
-	case errors.Is(err, storeapi.ErrInsufficientCapacity), errors.Is(err, scheduler.ErrUnschedulable):
+	case errors.Is(err, storeapi.ErrInsufficientCapacity), errors.Is(err, storeapi.ErrQuotaExceeded), errors.Is(err, scheduler.ErrUnschedulable):
 		return status.Error(codes.ResourceExhausted, err.Error())
 	default:
 		return status.Error(codes.Internal, err.Error())

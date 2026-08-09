@@ -40,6 +40,9 @@ func (s *Store) PutTask(ctx context.Context, t api.Task, expectedRevision int64)
 	if !validID(t.Metadata.ID) {
 		return t, errors.New("invalid task ID")
 	}
+	if saved, configured, err := s.putTaskWithQuota(ctx, t, expectedRevision); configured {
+		return saved, err
+	}
 	t.APIVersion = api.Version
 	t.Metadata.Revision = 0
 	return putResource(ctx, s.client, s.key("tasks", t.Metadata.ID), t, expectedRevision)
@@ -58,6 +61,12 @@ func (s *Store) PutWorkload(ctx context.Context, w api.Workload, expectedRevisio
 	}
 	w.APIVersion = api.Version
 	w.Metadata.Revision = 0
+	if revision, configured, err := s.putCountedWithQuota(ctx, "workloads", w.Metadata.ID, expectedRevision, w); configured {
+		if err == nil {
+			w.Metadata.Revision = revision
+		}
+		return w, err
+	}
 	return putResource(ctx, s.client, s.key("workloads", w.Metadata.ID), w, expectedRevision)
 }
 func (s *Store) PutService(ctx context.Context, service api.Service, expectedRevision int64) (api.Service, error) {
@@ -66,6 +75,12 @@ func (s *Store) PutService(ctx context.Context, service api.Service, expectedRev
 	}
 	service.APIVersion = api.Version
 	service.Metadata.Revision = 0
+	if revision, configured, err := s.putCountedWithQuota(ctx, "services", service.Metadata.ID, expectedRevision, service); configured {
+		if err == nil {
+			service.Metadata.Revision = revision
+		}
+		return service, err
+	}
 	return putResource(ctx, s.client, s.key("services", service.Metadata.ID), service, expectedRevision)
 }
 
@@ -234,6 +249,9 @@ func (s *Store) DeleteWorkload(ctx context.Context, id string, expected int64) e
 	if !validID(id) {
 		return storeapi.ErrNotFound
 	}
+	if configured, err := s.deleteCountedWithQuota(ctx, "workloads", id, expected); configured {
+		return err
+	}
 	key := s.key("workloads", id)
 	cmp := clientv3.Compare(clientv3.ModRevision(key), "=", expected)
 	resp, err := s.client.Txn(ctx).If(cmp).Then(clientv3.OpDelete(key)).Commit()
@@ -252,6 +270,9 @@ func (s *Store) DeleteWorkload(ctx context.Context, id string, expected int64) e
 func (s *Store) DeleteService(ctx context.Context, id string, expected int64) error {
 	if !validID(id) {
 		return storeapi.ErrNotFound
+	}
+	if configured, err := s.deleteCountedWithQuota(ctx, "services", id, expected); configured {
+		return err
 	}
 	key := s.key("services", id)
 	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(key), "=", expected)).Then(clientv3.OpDelete(key)).Commit()
@@ -277,10 +298,31 @@ func (s *Store) DeleteTask(ctx context.Context, id string, expected int64) error
 	if expected > 0 && task.Metadata.Revision != expected {
 		return storeapi.ErrConflict
 	}
+	quotaState, quotaKV, quotaErr := s.quota(ctx)
+	quotaConfigured := quotaErr == nil
+	if quotaErr != nil && !errors.Is(quotaErr, storeapi.ErrNotFound) {
+		return quotaErr
+	}
+	var quotaData []byte
+	quotaKey := s.key("configuration", "quota")
+	if quotaConfigured {
+		quotaState.Usage.Tasks--
+		quotaState.Usage.Resources = quotaState.Usage.Resources.Sub(task.Spec.Resources)
+		if err := quotaState.withinLimits(); err != nil {
+			return err
+		}
+		quotaData, _ = json.Marshal(quotaState)
+	}
 	taskKey, assignmentKey := s.key("tasks", id), s.key("assignments", id)
 	assignmentKV, getErr := getOne(ctx, s.client, assignmentKey)
 	if errors.Is(getErr, storeapi.ErrNotFound) {
-		resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(taskKey), "=", task.Metadata.Revision)).Then(clientv3.OpDelete(taskKey)).Commit()
+		compares := []clientv3.Cmp{clientv3.Compare(clientv3.ModRevision(taskKey), "=", task.Metadata.Revision)}
+		operations := []clientv3.Op{clientv3.OpDelete(taskKey)}
+		if quotaConfigured {
+			compares = append(compares, clientv3.Compare(clientv3.ModRevision(quotaKey), "=", quotaKV.ModRevision))
+			operations = append(operations, clientv3.OpPut(quotaKey, string(quotaData)))
+		}
+		resp, err := s.client.Txn(ctx).If(compares...).Then(operations...).Commit()
 		if err != nil {
 			return err
 		}
@@ -311,7 +353,13 @@ func (s *Store) DeleteTask(ctx context.Context, id string, expected int64) error
 	}
 	node.Metadata.Revision = 0
 	nodeData, _ := json.Marshal(node)
-	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(taskKey), "=", task.Metadata.Revision), clientv3.Compare(clientv3.ModRevision(assignmentKey), "=", assignmentKV.ModRevision), clientv3.Compare(clientv3.ModRevision(nodeKey), "=", nodeKV.ModRevision)).Then(clientv3.OpDelete(taskKey), clientv3.OpDelete(assignmentKey), clientv3.OpPut(nodeKey, string(nodeData))).Commit()
+	compares := []clientv3.Cmp{clientv3.Compare(clientv3.ModRevision(taskKey), "=", task.Metadata.Revision), clientv3.Compare(clientv3.ModRevision(assignmentKey), "=", assignmentKV.ModRevision), clientv3.Compare(clientv3.ModRevision(nodeKey), "=", nodeKV.ModRevision)}
+	operations := []clientv3.Op{clientv3.OpDelete(taskKey), clientv3.OpDelete(assignmentKey), clientv3.OpPut(nodeKey, string(nodeData))}
+	if quotaConfigured {
+		compares = append(compares, clientv3.Compare(clientv3.ModRevision(quotaKey), "=", quotaKV.ModRevision))
+		operations = append(operations, clientv3.OpPut(quotaKey, string(quotaData)))
+	}
+	resp, err := s.client.Txn(ctx).If(compares...).Then(operations...).Commit()
 	if err != nil {
 		return err
 	}

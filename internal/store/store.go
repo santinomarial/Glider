@@ -14,6 +14,7 @@ var (
 	ErrNotFound             = errors.New("resource not found")
 	ErrAlreadyAssigned      = errors.New("task already assigned")
 	ErrInsufficientCapacity = errors.New("node reservation no longer fits")
+	ErrQuotaExceeded        = errors.New("cluster quota exceeded")
 )
 
 type BindRequest struct {

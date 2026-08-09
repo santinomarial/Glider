@@ -61,6 +61,62 @@ func TestEtcdConcurrentBindHasOneWinner(t *testing.T) {
 	}
 }
 
+func TestConcurrentQuotaAdmissionHasOneWinnerAndDeleteReleasesUsage(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "quota-cluster")
+	ctx := context.Background()
+	limits := QuotaLimits{Tasks: 1, Workloads: 2, Services: 2, Resources: api.Resources{CPUMilli: 500, MemoryBytes: 1024}}
+	if err := s.ConfigureQuota(ctx, limits); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for _, id := range []string{"one", "two"} {
+		go func(id string) {
+			<-start
+			_, err := s.PutTask(ctx, api.Task{Metadata: api.Metadata{ID: id}, Spec: api.TaskSpec{Image: "image", Resources: api.Resources{CPUMilli: 500, MemoryBytes: 1024}}}, 0)
+			errs <- err
+		}(id)
+	}
+	close(start)
+	winners := 0
+	for range 2 {
+		err := <-errs
+		if err == nil {
+			winners++
+		} else if !errors.Is(err, storeapi.ErrConflict) && !errors.Is(err, storeapi.ErrQuotaExceeded) {
+			t.Fatalf("unexpected admission error: %v", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("quota winners = %d", winners)
+	}
+	tasks, _ := s.ListTasks(ctx)
+	if len(tasks) != 1 {
+		t.Fatalf("stored tasks = %d", len(tasks))
+	}
+	if err := s.DeleteTask(ctx, tasks[0].Metadata.ID, tasks[0].Metadata.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.PutTask(ctx, api.Task{Metadata: api.Metadata{ID: "replacement"}, Spec: api.TaskSpec{Image: "image", Resources: api.Resources{CPUMilli: 500, MemoryBytes: 1024}}}, 0); err != nil {
+		t.Fatalf("quota was not released: %v", err)
+	}
+}
+
+func TestQuotaConfigurationMustMatchAcrossReplicas(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "quota-config-cluster")
+	ctx := context.Background()
+	limits := QuotaLimits{Tasks: 1, Workloads: 1, Services: 1, Resources: api.Resources{CPUMilli: 1, MemoryBytes: 1}}
+	if err := s.ConfigureQuota(ctx, limits); err != nil {
+		t.Fatal(err)
+	}
+	limits.Tasks = 2
+	if err := s.ConfigureQuota(ctx, limits); err == nil {
+		t.Fatal("mismatched replica quota was accepted")
+	}
+}
+
 func TestDeleteAssignedTaskAtomicallyReleasesReservation(t *testing.T) {
 	client := startEtcd(t)
 	s, _ := New(client, "delete-cluster")
