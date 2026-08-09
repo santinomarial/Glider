@@ -20,6 +20,14 @@ The report fails the gate above 250 microseconds p99 at 100 scheduler nodes,
 discovery endpoints. Environment overrides are for stricter qualified hardware
 profiles; production CI must not relax the documented defaults.
 
+`make runtime-benchmark` additionally performs 20 complete container lifecycle
+operations against a real Linux kernel and cgroup v2. It reuses a prepared
+minimal root filesystem, reports nearest-rank p50/p95/p99 and throughput as
+`glider.performance/v1`, and fails above 500 milliseconds p99. This qualifies
+warm-rootfs create/start/workload-exit/cleanup on one host. It does not include
+cold image pull/unpack, registry latency, or multi-host scheduling and must not
+be represented as evidence for those environments.
+
 Keep etcd database usage below 70%, node disks below the configured pressure
 threshold, API p99 below one second, and non-OK request rate below 5%. Add
 capacity before sustained CPU exceeds 70% or in-flight requests trend upward.

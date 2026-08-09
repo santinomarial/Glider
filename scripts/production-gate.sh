@@ -35,6 +35,7 @@ run_gate backup-recovery docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=
 run_gate packaged-ha scripts/test-packaged-ha.sh
 run_gate packaged-upgrade scripts/test-upgrade.sh
 run_gate benchmarks scripts/benchmark.sh
+run_gate runtime-benchmark scripts/benchmark-runtime.sh
 
 run_gate signed-release env GLIDER_SIGNING_KEY="${KEY}" docker run --rm -v "${REPO_ROOT}:/src" -v "${KEY}:/release.key:ro" -w /src -e GLIDER_SIGNING_KEY=/release.key golang:1.26 sh -c 'bash scripts/release.sh && bash scripts/verify-release.sh dist'
 
