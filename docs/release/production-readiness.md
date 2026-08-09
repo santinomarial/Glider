@@ -19,11 +19,11 @@ Passing unit tests alone does not close a row.
 | Storage and disk pressure | P0 | Image GC, admission thresholds, cordon-before-evict node policy, durable pressure/event status, and real constrained-filesystem recovery test exist | Release-environment sustained disk-pressure qualification |
 | Network policy and exposure | P0 | Overlay/NAT, stable service VIP/DNS/load balancing, stateful ingress/egress policy, deletion recovery, underlay-aware MTU validation, and real two-node VXLAN/service packet qualification exist | Release-environment multi-host qualification |
 | Observability | P0 | Resource metrics, durable bounded events, correlated JSON daemon/API logs, request latency/error/saturation histograms, leadership/snapshot signals, a packaged Grafana dashboard, and executable alert fire-drill tests exist | Release-environment scrape, notification-routing, and on-call delivery fire drill |
-| Packaging and host integration | P0 | Reproducible signed static binaries, hardened units, sysusers/tmpfiles, installer/uninstaller tests, and non-executing fail-closed config/TLS preflight exist | Packaged canary upgrade qualification |
+| Packaging and host integration | P0 | Reproducible signed static binaries, hardened units, sysusers/tmpfiles, installer/uninstaller tests, non-executing fail-closed config/TLS preflight, and packaged canary upgrade qualification exist | Release-environment host acceptance |
 | Release security | P0 | Isolation gate, pinned official reachable-code vulnerability scan, response SLAs, SPDX 2.3 SBOM, in-toto SLSA v1 provenance, checksums, signatures, and tamper-negative verification exist | Independent threat-model review |
 | Reliability qualification | P0 | Unit/race/runtime, real kernel-network and disk-pressure tests, lease-partition self-fencing SLO, packaged controller crash storm, packaged control-plane loss, three-member etcd leader loss, encrypted recovery, and a consolidated evidence-producing gate exist | Release-environment multi-host soak and fault qualification |
-| Performance qualification | P1 | Microbenchmarks only | Published target hardware, capacity envelope, saturation behavior, p95/p99 SLOs, and regression thresholds |
-| Operator documentation | P1 | Design documents exist | Installation, hardening, sizing, monitoring, backup, restore, upgrade, rollback, incident, and decommission runbooks |
+| Performance qualification | P1 | Published baseline sizing, saturation signals, p99 operational SLO, and enforceable scheduler/discovery regression thresholds exist | Release-hardware load and saturation qualification |
+| Operator documentation | P1 | Installation, hardening, sizing, monitoring, backup/restore, upgrade/rollback, HA, PKI, node, storage-pressure, incident, and decommission runbooks exist | Release-environment review and rehearsal |
 
 ## Release rule
 
