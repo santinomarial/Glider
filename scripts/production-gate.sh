@@ -8,13 +8,13 @@ if [ -n "$(git status --porcelain)" ]; then
 	exit 2
 fi
 command -v docker >/dev/null
-command -v openssl >/dev/null
 
 WORK="$(mktemp -d)"
 LOGS="${WORK}/logs"
 KEY="${WORK}/release.key"
 mkdir -p "${LOGS}"
-openssl genpkey -algorithm Ed25519 -out "${KEY}" >/dev/null 2>&1
+docker run --rm -v "${WORK}:/work" golang:1.26 \
+	openssl genpkey -algorithm Ed25519 -out /work/release.key >/dev/null 2>&1
 
 run_gate() {
 	local name="$1"
