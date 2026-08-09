@@ -1,0 +1,32 @@
+[Unit]
+Description=Glider node agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/glider/gliderd.env
+ExecStart=/usr/bin/gliderd $GLIDERD_ARGS
+Restart=always
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=45s
+UMask=0027
+LimitNOFILE=1048576
+TasksMax=infinity
+# gliderd owns namespaces, mounts, cgroups, veth, bridge, NAT, and VXLAN.
+# Removing these privileges prevents the runtime from satisfying its contract.
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_KILL CAP_NET_ADMIN CAP_NET_RAW CAP_SETGID CAP_SETUID CAP_SETPCAP CAP_SYS_ADMIN CAP_SYS_CHROOT
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_SYS_CHROOT
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/glider /run/glider
+PrivateTmp=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

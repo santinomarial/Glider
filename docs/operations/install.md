@@ -1,0 +1,23 @@
+# Installation and host integration
+
+Release archives contain statically linked Linux binaries for amd64 and arm64,
+systemd units, sysusers/tmpfiles declarations, and example environment files.
+Verify `SHA256SUMS.sig` against a separately trusted release public key, then
+verify every checksum before extracting. Install ordinary binaries in
+`/usr/bin`, the privileged `glider-exec` helper in `/usr/libexec/glider`, units
+in `/usr/lib/systemd/system`, and declarations in their corresponding
+`sysusers.d` and `tmpfiles.d` directories.
+
+Copy—not symlink—the example environment file into `/etc/glider`, replace all
+`CHANGE_ME` values, install certificates with owner-only private-key modes,
+run `systemd-sysusers` and `systemd-tmpfiles --create`, then enable the relevant
+service. The control plane runs as the unprivileged `glider` account. The node
+agent retains only the capabilities required for namespaces, mounts, cgroups,
+and networking and receives write access only to its state paths.
+
+`scripts/release.sh` requires an Ed25519 private key through
+`GLIDER_SIGNING_KEY`; it refuses unsigned releases. Builds use `CGO_ENABLED=0`,
+`-trimpath`, a fixed source epoch, an empty Go build ID, embedded version data,
+sorted archive entries, numeric ownership, checksums, a dependency module
+inventory, and detached Ed25519 signatures. `scripts/verify-release.sh` is the
+release acceptance check.

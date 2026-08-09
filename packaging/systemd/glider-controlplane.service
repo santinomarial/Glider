@@ -1,0 +1,30 @@
+[Unit]
+Description=Glider control plane
+After=network-online.target etcd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=glider
+Group=glider
+EnvironmentFile=/etc/glider/controlplane.env
+ExecStart=/usr/bin/glider-controlplane $GLIDER_CONTROLPLANE_ARGS
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+UMask=0027
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

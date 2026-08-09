@@ -24,6 +24,7 @@ import (
 	"github.com/santinomarial/glider/internal/nodeops"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
+	"github.com/santinomarial/glider/internal/version"
 )
 
 func main() {
@@ -36,6 +37,7 @@ func main() {
 	var insecureEtcd bool
 	var operationsListen, tlsCert, tlsKey, clientCA string
 	var execHelper string
+	var showVersion bool
 	flag.StringVar(&endpoints, "etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
 	flag.StringVar(&nodeID, "node-id", "", "this node's stable ID (required)")
 	flag.StringVar(&clusterID, "cluster-id", "default", "Glider cluster ID")
@@ -55,7 +57,12 @@ func main() {
 	flag.StringVar(&tlsKey, "tls-key", "", "node server TLS private key")
 	flag.StringVar(&clientCA, "client-ca", "", "CA used to authenticate operations clients")
 	flag.StringVar(&execHelper, "exec-helper", "/usr/libexec/glider-exec", "absolute path to hardened exec helper")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
+	if showVersion {
+		fmt.Println(version.Version)
+		return
+	}
 	if nodeID == "" {
 		fmt.Fprintln(os.Stderr, "gliderd: --node-id is required")
 		os.Exit(2)

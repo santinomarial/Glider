@@ -26,6 +26,7 @@ import (
 	"github.com/santinomarial/glider/internal/scheduler"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
+	"github.com/santinomarial/glider/internal/version"
 )
 
 func main() {
@@ -43,9 +44,14 @@ func main() {
 	etcdCA := flag.String("etcd-ca", "", "etcd server CA certificate")
 	etcdServerName := flag.String("etcd-tls-server-name", "", "expected etcd certificate name")
 	insecureEtcd := flag.Bool("insecure-etcd", false, "disable etcd TLS (development only)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	requestRate := flag.Int("request-rate", 50, "allowed requests per second per authenticated principal")
 	requestBurst := flag.Int("request-burst", 100, "request burst per authenticated principal")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.Version)
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	var err error

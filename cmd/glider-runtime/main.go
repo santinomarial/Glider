@@ -33,6 +33,7 @@ import (
 	containernetwork "github.com/santinomarial/glider/internal/network"
 	"github.com/santinomarial/glider/internal/runtime/cgroup"
 	"github.com/santinomarial/glider/internal/runtime/process"
+	"github.com/santinomarial/glider/internal/version"
 )
 
 // exitSupervisorFailure is returned by the CLI when the container
@@ -68,6 +69,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "version":
+		fmt.Println(version.Version)
 	case "run":
 		os.Exit(runCmd(os.Args[2:]))
 	case "recover":

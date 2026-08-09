@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/santinomarial/glider/internal/backup"
 	"github.com/santinomarial/glider/internal/transport"
+	"github.com/santinomarial/glider/internal/version"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/etcdutl/v3/snapshot"
 	"go.uber.org/zap"
@@ -22,6 +23,9 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "version":
+		fmt.Println(version.Version)
+		return
 	case "backup":
 		err = runBackup(os.Args[2:])
 	case "verify":

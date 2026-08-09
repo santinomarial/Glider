@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/transport"
+	"github.com/santinomarial/glider/internal/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -54,6 +55,10 @@ func main() {
 	nodeEndpoint := flag.String("node-endpoint", "", "override node operations address")
 	insecureDevelopment := flag.Bool("insecure-development", false, "disable TLS verification (development only)")
 	flag.Parse()
+	if flag.NArg() == 1 && flag.Arg(0) == "version" {
+		fmt.Println(version.Version)
+		return
+	}
 	if flag.NArg() == 0 {
 		usage()
 	}
