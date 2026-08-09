@@ -9,6 +9,10 @@
 4. For suspected credential exposure, deny the principal, rotate its leaf
    certificate, and rotate affected secrets. Rotate the cluster encryption key
    only through the documented migration procedure.
+   If the secret-encryption key is unavailable or ciphertext authentication
+   fails, stop secret-bearing scheduling and restore the original escrowed key
+   or authenticated ciphertext; never replace data merely to suppress the
+   decrypt error. Delivery remains fail-closed and emits no success audit event.
 5. For data loss, stop mutations, select a verified encrypted off-host recovery
    point, and follow the restore runbook in an isolated environment before
    promoting it.

@@ -98,6 +98,71 @@ func TestAssignmentFencedSecretDeliveryOverMTLS(t *testing.T) {
 	}
 }
 
+func TestKeyLossAndCorruptCiphertextFailClosedUntilRecovery(t *testing.T) {
+	etcd := startEtcd(t)
+	store, _ := etcdstore.New(etcd, "secret-recovery")
+	goodCipher, _ := secretapi.NewCipher(bytes.Repeat([]byte{4}, 32), "secret-recovery")
+	wrongCipher, _ := secretapi.NewCipher(bytes.Repeat([]byte{5}, 32), "secret-recovery")
+	ctx := context.Background()
+	plaintext := api.Secret{Metadata: api.Metadata{ID: "recovery-secret"}, Data: map[string][]byte{"token": []byte("recovered-value")}}
+	envelope, err := goodCipher.Encrypt(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.PutSecret(ctx, envelope, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _ := store.PutTask(ctx, api.Task{Metadata: api.Metadata{ID: "recovery-task"}, Spec: api.TaskSpec{Image: "image", Secrets: []api.SecretEnvRef{{SecretID: "recovery-secret", Key: "token", Env: "TOKEN"}}}, Status: api.TaskStatus{Phase: api.TaskPending}}, 0)
+	node, _ := store.PutNode(ctx, api.Node{Metadata: api.Metadata{ID: "recovery-node"}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}}, 0)
+	assignment, err := store.Bind(ctx, storeapi.BindRequest{TaskID: task.Metadata.ID, TaskRevision: task.Metadata.Revision, NodeID: node.Metadata.ID, NodeRevision: node.Metadata.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, _ := structpb.NewStruct(map[string]any{"task_id": task.Metadata.ID, "generation": assignment.Generation})
+
+	wrongAddress, wrongDial := startControlPlane(t, store, wrongCipher)
+	wrongKeyNode := wrongDial(node.Metadata.ID, wrongAddress)
+	defer wrongKeyNode.Close()
+	if err := wrongKeyNode.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", input, new(structpb.Struct)); status.Code(err) != codes.Internal {
+		t.Fatalf("replacement key did not fail closed: %v", err)
+	}
+	if events, _ := store.ListEvents(ctx); len(events) != 0 {
+		t.Fatalf("failed decrypt emitted delivery audit: %+v", events)
+	}
+
+	corrupt := saved
+	corrupt.Ciphertext = append([]byte(nil), saved.Ciphertext...)
+	corrupt.Ciphertext[len(corrupt.Ciphertext)/2] ^= 1
+	corrupt, err = store.PutSecret(ctx, corrupt, saved.Metadata.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goodAddress, goodDial := startControlPlane(t, store, goodCipher)
+	goodKeyNode := goodDial(node.Metadata.ID, goodAddress)
+	defer goodKeyNode.Close()
+	if err := goodKeyNode.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", input, new(structpb.Struct)); status.Code(err) != codes.Internal {
+		t.Fatalf("corrupt ciphertext did not fail closed: %v", err)
+	}
+
+	restoredEnvelope, _ := goodCipher.Encrypt(plaintext)
+	if _, err := store.PutSecret(ctx, restoredEnvelope, corrupt.Metadata.Revision); err != nil {
+		t.Fatal(err)
+	}
+	output := new(structpb.Struct)
+	if err := goodKeyNode.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", input, output); err != nil {
+		t.Fatalf("delivery did not recover after restoring authenticated ciphertext: %v", err)
+	}
+	encoded := output.AsMap()["values"].(map[string]any)["TOKEN"].(string)
+	decoded, _ := base64.StdEncoding.DecodeString(encoded)
+	if string(decoded) != "recovered-value" {
+		t.Fatalf("recovered secret = %q", decoded)
+	}
+	if events, _ := store.ListEvents(ctx); len(events) != 1 || events[0].Reason != "SecretDelivered" {
+		t.Fatalf("recovery audit events = %+v", events)
+	}
+}
+
 func startControlPlane(t *testing.T, store *etcdstore.Store, cipher *secretapi.Cipher) (string, func(string, string) *grpc.ClientConn) {
 	t.Helper()
 	dir := t.TempDir()
