@@ -21,8 +21,10 @@ import (
 
 	"github.com/santinomarial/glider/internal/agent"
 	"github.com/santinomarial/glider/internal/api"
+	imagemanager "github.com/santinomarial/glider/internal/image/manager"
 	"github.com/santinomarial/glider/internal/lease"
 	"github.com/santinomarial/glider/internal/nodeops"
+	storeapi "github.com/santinomarial/glider/internal/store"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
@@ -167,7 +169,7 @@ func main() {
 	go func() { _ = agent.NewHealthDaemon(nodeID, store, driver, time.Second).Run(runCtx) }()
 	go reconcileNetworking(runCtx, nodeID, store, driver, resync)
 	if imageGCInterval > 0 {
-		go collectImages(runCtx, driver, imageGCInterval)
+		go monitorStorage(runCtx, nodeID, store, driver, imageGCInterval)
 	}
 	go func() {
 		errs <- leaseManager.Run(ctx, func(context.Context) error {
@@ -184,7 +186,19 @@ func main() {
 	}
 }
 
-func collectImages(ctx context.Context, driver *agent.RuntimeDriver, interval time.Duration) {
+type storageDriver interface {
+	CollectImages(context.Context) (imagemanager.GCResult, error)
+	DiskUsage() (total, available uint64, pressured bool, err error)
+}
+
+type storageStore interface {
+	GetNode(context.Context, string) (api.Node, error)
+	PutNode(context.Context, api.Node, int64) (api.Node, error)
+	EvictNodeAssignments(context.Context, string) error
+	PutEvent(context.Context, api.Event) (api.Event, error)
+}
+
+func monitorStorage(ctx context.Context, nodeID string, store storageStore, driver storageDriver, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -193,12 +207,59 @@ func collectImages(ctx context.Context, driver *agent.RuntimeDriver, interval ti
 		} else if result.BytesReclaimed > 0 {
 			fmt.Fprintf(os.Stderr, "gliderd: image collection reclaimed %d bytes (%d blobs, %d layers)\n", result.BytesReclaimed, result.BlobsRemoved, result.LayersRemoved)
 		}
+		total, available, pressured, err := driver.DiskUsage()
+		if err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "gliderd: storage pressure check failed: %v\n", err)
+		} else if pressured {
+			if err := evacuateDiskPressure(ctx, nodeID, store, total, available); err != nil && ctx.Err() == nil {
+				fmt.Fprintf(os.Stderr, "gliderd: storage-pressure evacuation failed: %v\n", err)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
 	}
+}
+
+func evacuateDiskPressure(ctx context.Context, nodeID string, store storageStore, total, available uint64) error {
+	var node api.Node
+	var err error
+	firstTransition := true
+	for attempt := 0; attempt < 5; attempt++ {
+		node, err = store.GetNode(ctx, nodeID)
+		if err != nil {
+			return err
+		}
+		if node.Status.StoragePressure {
+			firstTransition = false
+		}
+		node.Spec.Unschedulable = true
+		node.Status.Phase = api.NodeDraining
+		node.Status.StoragePressure = true
+		node.Status.StorageTotalBytes = total
+		node.Status.StorageAvailableBytes = available
+		node.Status.UpdatedAt = time.Now().UTC()
+		if _, err = store.PutNode(ctx, node, node.Metadata.Revision); err == nil {
+			break
+		}
+		if !errors.Is(err, storeapi.ErrConflict) {
+			return err
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if err = store.EvictNodeAssignments(ctx, nodeID); err != nil {
+		return err
+	}
+	if !firstTransition {
+		return nil
+	}
+	event := api.Event{Metadata: api.Metadata{ID: uuid.NewString()}, Time: time.Now().UTC(), Type: "Warning", Reason: "StoragePressureEviction", Message: "node cordoned and assignments evicted after image GC could not restore the storage reserve", ObjectKind: "Node", ObjectID: nodeID, NodeID: nodeID, Fields: map[string]any{"total_bytes": total, "available_bytes": available}}
+	_, err = store.PutEvent(ctx, event)
+	return err
 }
 func split(value string) []string {
 	var out []string

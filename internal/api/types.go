@@ -89,11 +89,14 @@ type HealthSpec struct {
 	Readiness *Probe `json:"readiness,omitempty"`
 }
 type NodeStatus struct {
-	Phase         NodePhase `json:"phase"`
-	Reserved      Resources `json:"reserved"`
-	ObservedUsage Resources `json:"observed_usage"`
-	Images        []string  `json:"images,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	Phase                 NodePhase `json:"phase"`
+	Reserved              Resources `json:"reserved"`
+	ObservedUsage         Resources `json:"observed_usage"`
+	Images                []string  `json:"images,omitempty"`
+	StoragePressure       bool      `json:"storage_pressure,omitempty"`
+	StorageTotalBytes     uint64    `json:"storage_total_bytes,omitempty"`
+	StorageAvailableBytes uint64    `json:"storage_available_bytes,omitempty"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 func (n Node) Allocatable() Resources { return n.Spec.Capacity.Sub(n.Spec.SystemReserved) }
