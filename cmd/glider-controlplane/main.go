@@ -108,9 +108,11 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
+	rpcMetrics := observability.NewRPCMetrics(os.Stderr)
 	var serverOptions []grpc.ServerOption
 	if *insecureDevelopment {
 		fmt.Fprintln(os.Stderr, "glider-controlplane: WARNING: TLS and authorization disabled")
+		serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(rpcMetrics.UnaryInterceptor()))
 	} else {
 		if *tlsCert == "" || *tlsKey == "" || *clientCA == "" {
 			fatal(errors.New("--tls-cert, --tls-key, and --client-ca are required unless --insecure-development is set"))
@@ -120,7 +122,7 @@ func main() {
 			fatal(err)
 		}
 		limiter := transport.NewRateLimiter(*requestRate, *requestBurst)
-		serverOptions = append(serverOptions, grpc.Creds(credentials), grpc.ChainUnaryInterceptor(transport.UnaryAuthorizationInterceptor(), limiter.UnaryInterceptor()))
+		serverOptions = append(serverOptions, grpc.Creds(credentials), grpc.ChainUnaryInterceptor(transport.UnaryAuthorizationInterceptor(), rpcMetrics.UnaryInterceptor(), limiter.UnaryInterceptor()))
 	}
 	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(1<<20), grpc.MaxSendMsgSize(4<<20), grpc.MaxConcurrentStreams(256))
 	server := grpc.NewServer(serverOptions...)
@@ -142,7 +144,7 @@ func main() {
 		if err != nil && !*insecureDevelopment {
 			fatal(err)
 		}
-		metrics := &http.Server{Addr: *metricsListen, Handler: observability.NewMetricsHandler(store), ReadHeaderTimeout: 5 * time.Second, TLSConfig: metricsTLS}
+		metrics := &http.Server{Addr: *metricsListen, Handler: observability.NewMetricsHandler(store, rpcMetrics), ReadHeaderTimeout: 5 * time.Second, TLSConfig: metricsTLS}
 		go func() {
 			<-ctx.Done()
 			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -179,6 +181,8 @@ func main() {
 	electionPrefix := "/glider/v1/clusters/" + *clusterID + "/elections/controllers"
 	go func() {
 		err := leadership.Run(ctx, client, electionPrefix, *instanceID, func(leaderCtx context.Context) error {
+			rpcMetrics.SetLeader(true)
+			defer rpcMetrics.SetLeader(false)
 			fmt.Fprintf(os.Stderr, "glider-controlplane: replica %s acquired controller leadership\n", *instanceID)
 			return runLeaderControllers(leaderCtx, client, *clusterID, store, workloads, services, schedulerController, *eventRetention, *eventRetentionMax, *eventPruneInterval)
 		})

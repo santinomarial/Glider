@@ -1,0 +1,45 @@
+groups:
+  - name: glider-control-plane
+    rules:
+      - alert: GliderNoControllerLeader
+        expr: max(glider_controller_leader) == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: No Glider replica owns controller authority
+      - alert: GliderControllerLeadershipChurn
+        expr: sum(increase(glider_controller_leadership_changes_total[15m])) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Glider controller leadership is unstable
+      - alert: GliderAPIErrorRateHigh
+        expr: sum(rate(glider_api_requests_total{code!="OK"}[5m])) / clamp_min(sum(rate(glider_api_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than five percent of Glider API requests are failing
+      - alert: GliderAPIP99LatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(glider_api_request_duration_seconds_bucket[5m]))) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Glider API p99 latency exceeds one second
+      - alert: GliderMetricsSnapshotFailed
+        expr: increase(glider_metrics_snapshot_failures_total[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: A Glider replica cannot read authoritative metrics state
+      - alert: GliderNodeUnreachable
+        expr: glider_nodes{phase="UNREACHABLE"} > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: One or more Glider nodes are unreachable

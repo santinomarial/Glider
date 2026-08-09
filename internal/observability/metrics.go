@@ -15,9 +15,18 @@ type Snapshotter interface {
 	ListServices(context.Context) ([]api.Service, error)
 	ListEvents(context.Context) ([]api.Event, error)
 }
-type Handler struct{ store Snapshotter }
+type Handler struct {
+	store Snapshotter
+	rpc   *RPCMetrics
+}
 
-func NewMetricsHandler(store Snapshotter) http.Handler { return &Handler{store: store} }
+func NewMetricsHandler(store Snapshotter, rpc ...*RPCMetrics) http.Handler {
+	handler := &Handler{store: store}
+	if len(rpc) > 0 {
+		handler.rpc = rpc[0]
+	}
+	return handler
+}
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	nodes, e1 := h.store.ListNodes(r.Context())
@@ -26,6 +35,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	services, e4 := h.store.ListServices(r.Context())
 	events, e5 := h.store.ListEvents(r.Context())
 	if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil {
+		if h.rpc != nil {
+			h.rpc.RecordSnapshotFailure()
+		}
 		http.Error(w, "metrics snapshot unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -47,4 +59,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "glider_task_ready{task_id=%q,workload_id=%q,node_id=%q} %d\n", t.Metadata.ID, t.Spec.WorkloadID, t.Status.NodeID, ready)
 	}
 	fmt.Fprintf(w, "glider_workloads %d\nglider_services %d\nglider_events %d\n", len(workloads), len(services), len(events))
+	if h.rpc != nil {
+		h.rpc.WritePrometheus(w)
+	}
 }

@@ -9,6 +9,7 @@ for archive in "${DIR}"/*.tar.gz; do
 	tar -tzf "${archive}" | grep '/bin/gliderd$' >/dev/null
 	tar -tzf "${archive}" | grep '/libexec/glider-exec$' >/dev/null
 	tar -tzf "${archive}" | grep '/install.sh$' >/dev/null
+	tar -tzf "${archive}" | grep '/monitoring/glider.rules.yml$' >/dev/null
 	stage="$(mktemp -d)"
 	root="$(mktemp -d)"
 	tar -xzf "${archive}" -C "${stage}"
@@ -17,6 +18,7 @@ for archive in "${DIR}"/*.tar.gz; do
 	test -x "${root}/usr/bin/glider-controlplane"
 	test -x "${root}/usr/libexec/glider/glider-exec"
 	test -f "${root}/usr/lib/systemd/system/glider-backup.timer"
+	test -f "${root}/usr/share/glider/monitoring/glider.rules.yml"
 	test -f "${root}/etc/glider/controlplane.env.example"
 	touch "${root}/etc/glider/operator-owned.conf"
 	"${package}/install.sh" uninstall --root "${root}"

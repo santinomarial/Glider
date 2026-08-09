@@ -33,7 +33,7 @@ SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 path() { printf '%s%s' "${ROOT}" "$1"; }
 
 if [ "${ACTION}" = install ]; then
-	install -d -m 0755 "$(path /usr/bin)" "$(path /usr/libexec/glider)" "$(path /usr/lib/systemd/system)" "$(path /usr/lib/sysusers.d)" "$(path /usr/lib/tmpfiles.d)" "$(path /etc/glider)"
+	install -d -m 0755 "$(path /usr/bin)" "$(path /usr/libexec/glider)" "$(path /usr/lib/systemd/system)" "$(path /usr/lib/sysusers.d)" "$(path /usr/lib/tmpfiles.d)" "$(path /usr/share/glider/monitoring)" "$(path /etc/glider)"
 	for binary in glider glider-admin glider-controlplane gliderd glider-runtime; do
 		install -m 0755 "${SOURCE}/bin/${binary}" "$(path /usr/bin/${binary})"
 	done
@@ -43,6 +43,7 @@ if [ "${ACTION}" = install ]; then
 	done
 	install -m 0644 "${SOURCE}/systemd/glider.sysusers" "$(path /usr/lib/sysusers.d/glider.conf)"
 	install -m 0644 "${SOURCE}/systemd/glider.tmpfiles" "$(path /usr/lib/tmpfiles.d/glider.conf)"
+	install -m 0644 "${SOURCE}/monitoring/glider.rules.yml" "$(path /usr/share/glider/monitoring/glider.rules.yml)"
 	for example in "${SOURCE}"/config/*.example; do
 		install -m 0640 "${example}" "$(path /etc/glider/$(basename "${example}"))"
 	done
@@ -58,4 +59,5 @@ for unit in glider-controlplane.service gliderd.service glider-backup.service gl
 	rm -f "$(path /usr/lib/systemd/system/${unit})"
 done
 rm -f "$(path /usr/lib/sysusers.d/glider.conf)" "$(path /usr/lib/tmpfiles.d/glider.conf)"
+rm -f "$(path /usr/share/glider/monitoring/glider.rules.yml)"
 echo "Glider executables and units removed; configuration, keys, backups, and runtime data were preserved."

@@ -26,7 +26,7 @@ LDFLAGS="-s -w -buildid= -X github.com/santinomarial/glider/internal/version.Ver
 BINARIES=(glider glider-admin glider-controlplane gliderd glider-runtime glider-exec)
 for arch in amd64 arm64; do
 	stage="${STAGE_ROOT}/glider-${VERSION}-linux-${arch}"
-	mkdir -p "${stage}/bin" "${stage}/libexec" "${stage}/systemd" "${stage}/config"
+	mkdir -p "${stage}/bin" "${stage}/libexec" "${stage}/systemd" "${stage}/config" "${stage}/monitoring"
 	for binary in "${BINARIES[@]}"; do
 		target="${stage}/bin/${binary}"
 		if [ "${binary}" = glider-exec ]; then target="${stage}/libexec/${binary}"; fi
@@ -34,6 +34,7 @@ for arch in amd64 arm64; do
 	done
 	cp packaging/systemd/* "${stage}/systemd/"
 	cp packaging/config/* "${stage}/config/"
+	cp packaging/monitoring/* "${stage}/monitoring/"
 	cp packaging/install.sh "${stage}/install.sh"
 	chmod 0755 "${stage}/install.sh"
 	cp VERSION README.md "${stage}/"
