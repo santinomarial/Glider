@@ -34,6 +34,8 @@ for arch in amd64 arm64; do
 	done
 	cp packaging/systemd/* "${stage}/systemd/"
 	cp packaging/config/* "${stage}/config/"
+	cp packaging/install.sh "${stage}/install.sh"
+	chmod 0755 "${stage}/install.sh"
 	cp VERSION README.md "${stage}/"
 	archive="${OUTPUT}/glider-${VERSION}-linux-${arch}.tar.gz"
 	tar --sort=name --mtime="@${SOURCE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "${STAGE_ROOT}" -czf "${archive}" "$(basename "${stage}")"

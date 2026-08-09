@@ -19,7 +19,7 @@ Passing unit tests alone does not close a row.
 | Storage and disk pressure | P0 | Reference-safe image GC, periodic reclamation, and launch admission thresholds implemented | Workload eviction policy and real disk-exhaustion recovery qualification |
 | Network policy and exposure | P0 | Overlay/NAT/service DNS exist | Ingress/egress policy, service data plane, firewall persistence, MTU validation, and multi-node tests |
 | Observability | P0 | Basic resource metrics plus durable events with age/count retention | Structured process logs, API latency/error/saturation metrics, alerts, dashboards, and trace correlation |
-| Packaging and host integration | P0 | Source-run scripts only | Reproducible signed binaries/packages, systemd units, dedicated users/directories, config validation, install/uninstall/upgrade tests |
+| Packaging and host integration | P0 | Reproducible signed static binaries, hardened systemd units, sysusers/tmpfiles, fixed-mode installer, data-preserving uninstaller, and isolated package acceptance tests exist | Config preflight and packaged canary upgrade qualification |
 | Release security | P0 | Isolation gate, SPDX 2.3 SBOM, in-toto SLSA v1 provenance, checksums, artifact signatures, and tamper-negative verification exist | Vulnerability scan/response policy and independent threat-model review |
 | Reliability qualification | P0 | Unit/race/runtime and limited chaos gates | Real multi-node soak, partitions, control-plane loss, etcd member loss, disk pressure, crash storm, and recovery SLO gates |
 | Performance qualification | P1 | Microbenchmarks only | Published target hardware, capacity envelope, saturation behavior, p95/p99 SLOs, and regression thresholds |

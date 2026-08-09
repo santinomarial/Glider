@@ -8,6 +8,13 @@ verify every checksum before extracting. Install ordinary binaries in
 in `/usr/lib/systemd/system`, and declarations in their corresponding
 `sysusers.d` and `tmpfiles.d` directories.
 
+The archive's `install.sh install` performs those placements with fixed modes;
+`install.sh uninstall` removes only shipped executables, units, sysusers, and
+tmpfiles declarations. It deliberately preserves `/etc/glider`, PKI and backup
+keys, `/var/lib/glider*`, and operator backups. Packaging qualification runs
+both commands inside an isolated root and proves that operator-owned data
+survives uninstall.
+
 Copy—not symlink—the example environment file into `/etc/glider`, replace all
 `CHANGE_ME` values, install certificates with owner-only private-key modes,
 run `systemd-sysusers` and `systemd-tmpfiles --create`, then enable the relevant
