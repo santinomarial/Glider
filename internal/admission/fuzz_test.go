@@ -37,5 +37,9 @@ func FuzzAdmissionJSON(f *testing.F) {
 		if json.Unmarshal(data, &event) == nil {
 			_ = Event(event)
 		}
+		var secret api.Secret
+		if json.Unmarshal(data, &secret) == nil {
+			_ = Secret(secret)
+		}
 	})
 }

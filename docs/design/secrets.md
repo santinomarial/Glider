@@ -23,6 +23,13 @@ be supplied from files so they do not appear in shell history:
 glider secret put database password=/secure/input/password
 ```
 
-Assignment-fenced delivery to nodes is a separate boundary: a node may receive
-only values referenced by an assignment currently owned by that node. Until
-that delivery path is configured, stored secrets cannot be attached to tasks.
+Tasks reference individual secret keys and map them to environment names. A
+node fetches values over mTLS only for an assignment whose node ID and current
+generation exactly match its certificate identity. Every successful delivery
+is durably audited before the response is returned. Secret environment is
+passed to the workload but excluded from node-local runtime state.
+
+Rotating a secret replaces its encrypted object with a revision-guarded write.
+Existing processes retain their original environment; after reassignment or a
+rolling restart, the new assignment generation receives the rotated value and
+the superseded generation is denied.

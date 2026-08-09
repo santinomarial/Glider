@@ -41,6 +41,7 @@ type RuntimeDriver struct {
 	gcGrace      time.Duration
 	minFreeBytes uint64
 	minFreePct   float64
+	secrets      SecretResolver
 }
 
 const maxLogBytes = 64 << 20
@@ -206,6 +207,7 @@ func (d *RuntimeDriver) SetExecHelper(path string) error {
 	d.execHelper = path
 	return nil
 }
+func (d *RuntimeDriver) SetSecretResolver(resolver SecretResolver) { d.secrets = resolver }
 func (d *RuntimeDriver) Exec(ctx context.Context, a api.Assignment, command []string) ([]byte, int, error) {
 	if len(command) == 0 {
 		return nil, 0, errors.New("command is required")
@@ -273,6 +275,17 @@ func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed,
 	if err := d.ensureDiskCapacity(ctx); err != nil {
 		return Observed{}, err
 	}
+	var secretEnv []string
+	if len(a.Secrets) > 0 {
+		if d.secrets == nil {
+			return Observed{}, errors.New("assignment references secrets but node secret delivery is not configured")
+		}
+		resolved, resolveErr := d.secrets.Resolve(ctx, a)
+		if resolveErr != nil {
+			return Observed{}, fmt.Errorf("resolve assignment secrets: %w", resolveErr)
+		}
+		secretEnv = resolved
+	}
 	prepared, err := d.images.Prepare(ctx, a.Image, id)
 	if err != nil {
 		return Observed{}, fmt.Errorf("prepare image: %w", err)
@@ -296,7 +309,7 @@ func (d *RuntimeDriver) Ensure(ctx context.Context, a api.Assignment) (Observed,
 	if err != nil {
 		return Observed{}, err
 	}
-	cfg := process.Config{RootFS: prepared.RootFS, Argv: argv, Hostname: a.TaskID, StateDir: d.stateRoot, ContainerID: id, Env: append([]string(nil), prepared.Image.Config.Env...), WorkingDir: prepared.Image.Config.WorkingDir, Resources: cgroup.Resources{CPUCores: float64(a.Resources.CPUMilli) / 1000, MemoryBytes: a.Resources.MemoryBytes}, Stdout: logFile, Stderr: logFile}
+	cfg := process.Config{RootFS: prepared.RootFS, Argv: argv, Hostname: a.TaskID, StateDir: d.stateRoot, ContainerID: id, Env: append([]string(nil), prepared.Image.Config.Env...), SecretEnv: secretEnv, WorkingDir: prepared.Image.Config.WorkingDir, Resources: cgroup.Resources{CPUCores: float64(a.Resources.CPUMilli) / 1000, MemoryBytes: a.Resources.MemoryBytes}, Stdout: logFile, Stderr: logFile}
 	cfg.ConfigureNetwork = func(pid int) error {
 		_, err := d.network.EnsureWithPorts(context.Background(), id, pid, ports)
 		return err

@@ -77,7 +77,7 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 		RootFS:      cfg.RootFS,
 		Argv:        cfg.Argv,
 		Hostname:    cfg.Hostname,
-		Env:         append([]string(nil), cfg.Env...),
+		Env:         durableEnvironment(cfg),
 		WorkingDir:  cfg.WorkingDir,
 		CgroupPath:  cgroupPath,
 		Resources:   toStateResources(cfg.Resources),
@@ -149,7 +149,8 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 	if cmd.Stderr == nil {
 		cmd.Stderr = os.Stderr
 	}
-	envJSON, err := json.Marshal(cfg.Env)
+	runtimeEnv := append(append([]string(nil), cfg.Env...), cfg.SecretEnv...)
+	envJSON, err := json.Marshal(runtimeEnv)
 	if err != nil {
 		return failLaunch(dir, &rec, fmt.Errorf("encode workload environment: %w", err))
 	}
@@ -304,6 +305,8 @@ func Run(stop <-chan os.Signal, cfg Config) (exitCode int, err error) {
 
 	return waitOrStop(stop, cmd, dir, &rec, stopGrace)
 }
+
+func durableEnvironment(cfg Config) []string { return append([]string(nil), cfg.Env...) }
 
 // waitOrStop blocks until glider-init's own process exits, forwarding a
 // requested stop as the actual signal received on stop to glider-init

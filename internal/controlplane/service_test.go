@@ -43,3 +43,22 @@ func TestMutationRequiresBoundedIdempotencyKey(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSecretDeliveryRequiresExactNodeAndGeneration(t *testing.T) {
+	assignment := api.Assignment{TaskID: "task", NodeID: "node-a", Generation: 7}
+	node := transport.Principal{Name: "node-a", Roles: map[string]bool{"node": true}}
+	if !nodeOwnsAssignment(node, assignment, 7) {
+		t.Fatal("current owner generation denied")
+	}
+	if nodeOwnsAssignment(node, assignment, 6) {
+		t.Fatal("stale generation accepted")
+	}
+	peer := transport.Principal{Name: "node-b", Roles: map[string]bool{"node": true}}
+	if nodeOwnsAssignment(peer, assignment, 7) {
+		t.Fatal("peer node accepted")
+	}
+	operator := transport.Principal{Name: "operator", Roles: map[string]bool{"operator": true}}
+	if nodeOwnsAssignment(operator, assignment, 7) {
+		t.Fatal("non-node principal accepted")
+	}
+}

@@ -118,7 +118,9 @@ type Config struct {
 
 	// Env and WorkingDir come from the OCI image config when the Phase 5-7
 	// image manager prepares RootFS. Env entries use KEY=VALUE form.
-	Env        []string
+	Env []string
+	// SecretEnv is passed to the workload but never written to durable state.
+	SecretEnv  []string
 	WorkingDir string
 
 	// Stdout and Stderr receive the workload streams for its full lifetime.

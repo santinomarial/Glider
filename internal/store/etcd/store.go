@@ -243,6 +243,21 @@ func (s *Store) GetTask(ctx context.Context, id string) (api.Task, error) {
 	t.Metadata.Revision = kv.ModRevision
 	return t, nil
 }
+func (s *Store) GetAssignment(ctx context.Context, taskID string) (api.Assignment, error) {
+	var assignment api.Assignment
+	if !validID(taskID) {
+		return assignment, storeapi.ErrNotFound
+	}
+	kv, err := getOne(ctx, s.client, s.key("assignments", taskID))
+	if err != nil {
+		return assignment, err
+	}
+	if err := json.Unmarshal(kv.Value, &assignment); err != nil {
+		return assignment, fmt.Errorf("decode assignment %s: %w", taskID, err)
+	}
+	assignment.Metadata.Revision = kv.ModRevision
+	return assignment, nil
+}
 func (s *Store) GetNode(ctx context.Context, id string) (api.Node, error) {
 	var node api.Node
 	if !validID(id) {
@@ -700,7 +715,7 @@ func (s *Store) Bind(ctx context.Context, r storeapi.BindRequest) (api.Assignmen
 		return api.Assignment{}, storeapi.ErrInsufficientCapacity
 	}
 	gen := task.Metadata.Generation + 1
-	assignment := api.Assignment{APIVersion: api.Version, Metadata: api.Metadata{ID: task.Metadata.ID + "/" + fmt.Sprint(gen), Generation: gen}, TaskID: task.Metadata.ID, WorkloadID: task.Spec.WorkloadID, NodeID: node.Metadata.ID, Generation: gen, Resources: task.Spec.Resources, Image: task.Spec.Image, Command: append([]string(nil), task.Spec.Command...), RestartPolicy: task.Spec.RestartPolicy, Health: task.Spec.Health, HostPorts: append([]uint16(nil), task.Spec.HostPorts...), CreatedAt: time.Now().UTC()}
+	assignment := api.Assignment{APIVersion: api.Version, Metadata: api.Metadata{ID: task.Metadata.ID + "/" + fmt.Sprint(gen), Generation: gen}, TaskID: task.Metadata.ID, WorkloadID: task.Spec.WorkloadID, NodeID: node.Metadata.ID, Generation: gen, Resources: task.Spec.Resources, Image: task.Spec.Image, Command: append([]string(nil), task.Spec.Command...), RestartPolicy: task.Spec.RestartPolicy, Health: task.Spec.Health, HostPorts: append([]uint16(nil), task.Spec.HostPorts...), Secrets: append([]api.SecretEnvRef(nil), task.Spec.Secrets...), CreatedAt: time.Now().UTC()}
 	task.Status.Phase = api.TaskScheduled
 	task.Status.NodeID = node.Metadata.ID
 	task.Status.AssignmentGeneration = gen

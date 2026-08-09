@@ -5,12 +5,14 @@ package controlplane
 import (
 	"context"
 	"crypto/hmac"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -315,6 +317,60 @@ func (s *Service) DeleteSecret(ctx context.Context, in *structpb.Struct) (*struc
 	}
 	return encode(map[string]any{"deleted": id}, mapError(err))
 }
+func (s *Service) GetAssignmentSecrets(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	if s.secrets == nil {
+		return nil, status.Error(codes.FailedPrecondition, "secret encryption is not configured")
+	}
+	principal, ok := transport.PrincipalFromContext(ctx)
+	if !ok || !principal.Roles["node"] {
+		return nil, status.Error(codes.PermissionDenied, "node identity is required")
+	}
+	taskID, err := requiredString(in, "task_id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	generation, err := requiredRevision(in, "generation")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	assignment, err := s.store.GetAssignment(ctx, taskID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	if !nodeOwnsAssignment(principal, assignment, generation) {
+		return nil, status.Error(codes.PermissionDenied, "assignment is not owned by this node generation")
+	}
+	values := make(map[string]any, len(assignment.Secrets))
+	secretIDs := make([]any, 0, len(assignment.Secrets))
+	seen := make(map[string]bool)
+	for _, ref := range assignment.Secrets {
+		envelope, err := s.store.GetSecret(ctx, ref.SecretID)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		value, err := s.secrets.Decrypt(envelope)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "decrypt referenced secret")
+		}
+		data, exists := value.Data[ref.Key]
+		if !exists {
+			return nil, status.Errorf(codes.FailedPrecondition, "secret %s has no referenced key %s", ref.SecretID, ref.Key)
+		}
+		values[ref.Env] = base64.StdEncoding.EncodeToString(data)
+		if !seen[ref.SecretID] {
+			secretIDs = append(secretIDs, ref.SecretID)
+			seen[ref.SecretID] = true
+		}
+	}
+	event := api.Event{Metadata: api.Metadata{ID: uuid.NewString()}, Time: time.Now().UTC(), Type: "Normal", Reason: "SecretDelivered", Message: "referenced secrets delivered to assigned node", ObjectKind: "Task", ObjectID: taskID, NodeID: principal.Name, Fields: map[string]any{"generation": generation, "secret_ids": secretIDs}}
+	if _, err := s.store.PutEvent(ctx, event); err != nil {
+		return nil, status.Error(codes.Internal, "persist secret delivery audit event")
+	}
+	return encode(map[string]any{"values": values}, nil)
+}
+func nodeOwnsAssignment(principal transport.Principal, assignment api.Assignment, generation int64) bool {
+	return principal.Roles["node"] && assignment.NodeID == principal.Name && assignment.Generation == generation
+}
 func (s *Service) PutEvent(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var event api.Event
 	if err := decode(in, &event); err != nil {
@@ -433,6 +489,7 @@ type server interface {
 	PutSecret(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListSecrets(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	DeleteSecret(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	GetAssignmentSecrets(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutEvent(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListEvents(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	Schedule(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -509,6 +566,9 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("DeleteSecret", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.DeleteSecret(c, r)
+	}),
+	unary("GetAssignmentSecrets", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.GetAssignmentSecrets(c, r)
 	}),
 	unary("PutEvent", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.PutEvent(c, r)

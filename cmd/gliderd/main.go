@@ -38,6 +38,7 @@ func main() {
 	var insecureEtcd bool
 	var operationsListen, tlsCert, tlsKey, clientCA string
 	var execHelper string
+	var controlplaneEndpoint, controlplaneCA, controlplaneServerName string
 	var imageGCInterval, imageGCGrace time.Duration
 	var minFreeBytes uint64
 	var minFreePercent float64
@@ -61,6 +62,9 @@ func main() {
 	flag.StringVar(&tlsKey, "tls-key", "", "node server TLS private key")
 	flag.StringVar(&clientCA, "client-ca", "", "CA used to authenticate operations clients")
 	flag.StringVar(&execHelper, "exec-helper", "/usr/libexec/glider-exec", "absolute path to hardened exec helper")
+	flag.StringVar(&controlplaneEndpoint, "controlplane-endpoint", "", "control-plane address used for assignment-fenced secret delivery")
+	flag.StringVar(&controlplaneCA, "controlplane-ca", "", "control-plane CA certificate")
+	flag.StringVar(&controlplaneServerName, "controlplane-tls-server-name", "", "expected control-plane certificate name")
 	flag.DurationVar(&imageGCInterval, "image-gc-interval", 15*time.Minute, "interval for reference-safe image garbage collection (zero disables periodic GC)")
 	flag.DurationVar(&imageGCGrace, "image-gc-grace", 24*time.Hour, "minimum age before unreferenced image data is reclaimed")
 	flag.Uint64Var(&minFreeBytes, "storage-min-free-bytes", 2<<30, "refuse new launches below this available space after GC")
@@ -102,6 +106,18 @@ func main() {
 	}
 	if err := driver.SetExecHelper(execHelper); err != nil {
 		fatal(err)
+	}
+	if controlplaneEndpoint != "" {
+		credentials, err := transport.ClientCredentials(tlsCert, tlsKey, controlplaneCA, controlplaneServerName)
+		if err != nil {
+			fatal(err)
+		}
+		resolver, err := agent.NewControlPlaneSecretResolver(controlplaneEndpoint, credentials)
+		if err != nil {
+			fatal(err)
+		}
+		defer resolver.Close()
+		driver.SetSecretResolver(resolver)
 	}
 	if err := driver.ConfigureStorage(imageGCGrace, minFreeBytes, minFreePercent); err != nil {
 		fatal(err)

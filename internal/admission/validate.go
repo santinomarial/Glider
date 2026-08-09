@@ -11,6 +11,7 @@ import (
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]{0,61}[a-z0-9])?$`)
+var envPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
 func metadata(m api.Metadata) error {
 	if !idPattern.MatchString(m.ID) {
@@ -73,6 +74,16 @@ func taskSpec(v api.TaskSpec) error {
 			return errors.New("host ports must be non-zero and unique")
 		}
 		seen[port] = true
+	}
+	if len(v.Secrets) > 64 {
+		return errors.New("secret references exceed limit of 64")
+	}
+	seenEnv := make(map[string]bool)
+	for _, ref := range v.Secrets {
+		if !idPattern.MatchString(ref.SecretID) || !idPattern.MatchString(ref.Key) || !envPattern.MatchString(ref.Env) || seenEnv[ref.Env] {
+			return errors.New("secret references require valid secret_id, key, and unique env")
+		}
+		seenEnv[ref.Env] = true
 	}
 	for _, probe := range []*api.Probe{v.Health.Startup, v.Health.Liveness, v.Health.Readiness} {
 		if probe == nil {
