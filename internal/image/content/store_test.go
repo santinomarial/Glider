@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	digest "github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -15,6 +16,44 @@ import (
 
 func descriptor(data []byte) v1.Descriptor {
 	return v1.Descriptor{Digest: digest.FromBytes(data), Size: int64(len(data))}
+}
+
+func TestCollectRetainsReferencedAndRecentBlobs(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	old := descriptor([]byte("old"))
+	kept := descriptor([]byte("kept"))
+	recent := descriptor([]byte("recent"))
+	for _, item := range []struct {
+		desc v1.Descriptor
+		data string
+	}{{old, "old"}, {kept, "kept"}, {recent, "recent"}} {
+		if _, err := store.Put(context.Background(), item.desc, bytes.NewBufferString(item.data)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	for _, desc := range []v1.Descriptor{old, kept} {
+		path, _ := store.BlobPath(desc.Digest)
+		if err := os.Chtimes(path, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := store.Collect(context.Background(), map[digest.Digest]struct{}{kept.Digest: {}}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Removed != 1 || result.Bytes != old.Size {
+		t.Fatalf("result = %+v", result)
+	}
+	oldPath, _ := store.BlobPath(old.Digest)
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old blob still exists: %v", err)
+	}
+	for _, desc := range []v1.Descriptor{kept, recent} {
+		if err := store.Verify(desc); err != nil {
+			t.Fatalf("retained blob %s: %v", desc.Digest, err)
+		}
+	}
 }
 
 func TestPutPublishesVerifiedBlob(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	digest "github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -43,6 +44,11 @@ type Unpacker struct {
 	limits Limits
 }
 
+type GCResult struct {
+	Removed int
+	Bytes   int64
+}
+
 func New(root string, limits Limits) (*Unpacker, error) {
 	if root == "" || !filepath.IsAbs(root) {
 		return nil, errors.New("layer root must be absolute")
@@ -57,6 +63,58 @@ func New(root string, limits Limits) (*Unpacker, error) {
 		return nil, fmt.Errorf("create layer store: %w", err)
 	}
 	return &Unpacker{root: root, limits: limits}, nil
+}
+
+// Collect removes immutable unpacked layers not referenced by an active
+// snapshot and older than grace. The manager serializes this with Prepare.
+func (u *Unpacker) Collect(ctx context.Context, keep map[string]struct{}, grace time.Duration) (GCResult, error) {
+	var result GCResult
+	dir := filepath.Join(u.root, "sha256")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result, fmt.Errorf("list unpacked layers: %w", err)
+	}
+	cutoff := time.Now().Add(-grace)
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		path := filepath.Join(dir, entry.Name())
+		if _, retained := keep[path]; retained {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return result, err
+		}
+		if !info.IsDir() || info.ModTime().After(cutoff) {
+			continue
+		}
+		bytes, err := treeBytes(path)
+		if err != nil {
+			return result, fmt.Errorf("measure layer %s: %w", entry.Name(), err)
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return result, fmt.Errorf("remove layer %s: %w", entry.Name(), err)
+		}
+		result.Removed++
+		result.Bytes += bytes
+	}
+	return result, nil
+}
+
+func treeBytes(root string) (int64, error) {
+	var total int64
+	err := filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
 }
 
 // Unpack atomically publishes one immutable layer directory. blob must already

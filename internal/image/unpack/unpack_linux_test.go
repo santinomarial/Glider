@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	digest "github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -76,6 +77,43 @@ func TestUnpackEnforcesExpandedSizeLimit(t *testing.T) {
 	desc := v1.Descriptor{Digest: digest.FromBytes(data), Size: int64(len(data)), MediaType: v1.MediaTypeImageLayer}
 	if _, err := u.Unpack(context.Background(), desc, blob); !errors.Is(err, ErrResourceLimit) {
 		t.Fatalf("error = %v, want ErrResourceLimit", err)
+	}
+}
+
+func TestCollectRetainsReferencedAndRecentLayers(t *testing.T) {
+	u, _ := New(t.TempDir(), Limits{})
+	base := filepath.Join(u.root, "sha256")
+	old := filepath.Join(base, "old")
+	kept := filepath.Join(base, "kept")
+	recent := filepath.Join(base, "recent")
+	for _, dir := range []string{old, kept, recent} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "data"), []byte("1234"), 0o444); err != nil {
+			t.Fatal(err)
+		}
+	}
+	past := time.Now().Add(-2 * time.Hour)
+	for _, dir := range []string{old, kept} {
+		if err := os.Chtimes(dir, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := u.Collect(context.Background(), map[string]struct{}{kept: {}}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Removed != 1 || result.Bytes != 4 {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("old layer remains: %v", err)
+	}
+	for _, dir := range []string{kept, recent} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("retained layer missing: %v", err)
+		}
 	}
 }
 

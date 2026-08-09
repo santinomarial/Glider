@@ -120,6 +120,32 @@ func (m *Manager) Remove(id string) error {
 	return nil
 }
 
+// ActiveLowerDirs returns the immutable layers referenced by every durable
+// snapshot record. Invalid records fail closed so collection cannot guess.
+func (m *Manager) ActiveLowerDirs() (map[string]struct{}, error) {
+	active := make(map[string]struct{})
+	entries, err := os.ReadDir(m.root)
+	if err != nil {
+		return nil, fmt.Errorf("list snapshots: %w", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !idRE.MatchString(entry.Name()) {
+			continue
+		}
+		rec, err := loadRecord(filepath.Join(m.root, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("load snapshot %s for collection: %w", entry.Name(), err)
+		}
+		if rec.Version != 1 || rec.ID != entry.Name() {
+			return nil, fmt.Errorf("%w: snapshot %s record mismatch", ErrInvalidSnapshot, entry.Name())
+		}
+		for _, dir := range rec.LowerDirs {
+			active[filepath.Clean(dir)] = struct{}{}
+		}
+	}
+	return active, nil
+}
+
 // Recover removes a recorded partial snapshot or confirms a mounted one. It is
 // safe after a crash at any Ensure step.
 func (m *Manager) Recover(id string) (Snapshot, error) {

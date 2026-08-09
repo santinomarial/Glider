@@ -104,7 +104,11 @@ reusable.
 - Registry credentials are injectable internally; the standalone CLI pulls
   anonymously. Node credential configuration belongs to gliderd in Phase 10.
 - gzip and uncompressed tar layers are supported; zstd is not yet accepted.
-- Garbage-collection policy is deferred. Corruption cannot be reused, but disk
-  pressure still requires operator action.
+- Garbage collection discovers live unpacked layers from durable snapshot
+  records and fails closed if any record is corrupt. Collection is serialized
+  with image preparation and snapshot removal. Unreferenced blobs and layers
+  are reclaimed only after a configurable grace period, protecting recent
+  downloads and avoiding churn. Blob bytes are staging data after a verified
+  layer has been unpacked; active snapshots retain the unpacked layer itself.
 - Explicit snapshot recovery exists. Automatic startup scanning belongs to
   persistent gliderd reconciliation in Phase 10.

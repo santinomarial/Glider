@@ -27,6 +27,11 @@ var (
 
 type Store struct{ root string }
 
+type GCResult struct {
+	Removed int
+	Bytes   int64
+}
+
 func NewStore(root string) (*Store, error) {
 	if root == "" || !filepath.IsAbs(root) {
 		return nil, fmt.Errorf("content root must be an absolute path")
@@ -128,6 +133,58 @@ func (s *Store) Verify(desc v1.Descriptor) error {
 	}
 	path, _ := s.BlobPath(desc.Digest)
 	return verifyFile(path, desc)
+}
+
+// Collect removes blobs not present in keep once they are older than grace.
+// Each candidate is locked using the same per-digest lock as Put, so a blob is
+// never removed while it is being published. Callers must retain references
+// for any content they still need before invoking Collect.
+func (s *Store) Collect(ctx context.Context, keep map[digest.Digest]struct{}, grace time.Duration) (GCResult, error) {
+	var result GCResult
+	dir := filepath.Join(s.root, "blobs", "sha256")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result, fmt.Errorf("list content blobs: %w", err)
+	}
+	cutoff := time.Now().Add(-grace)
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		d := digest.NewDigestFromEncoded(digest.SHA256, entry.Name())
+		if d.Validate() != nil {
+			continue
+		}
+		if _, retained := keep[d]; retained {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return result, fmt.Errorf("stat content blob %s: %w", d, err)
+		}
+		if !info.Mode().IsRegular() || info.ModTime().After(cutoff) {
+			continue
+		}
+		lock, err := s.lock(ctx, d)
+		if err != nil {
+			return result, err
+		}
+		path, _ := s.BlobPath(d)
+		current, statErr := os.Stat(path)
+		if statErr == nil && current.Mode().IsRegular() && !current.ModTime().After(cutoff) {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				lock.close()
+				return result, fmt.Errorf("remove content blob %s: %w", d, err)
+			}
+			result.Removed++
+			result.Bytes += current.Size()
+		} else if statErr != nil && !os.IsNotExist(statErr) {
+			lock.close()
+			return result, fmt.Errorf("restat content blob %s: %w", d, statErr)
+		}
+		lock.close()
+	}
+	return result, nil
 }
 
 func verifyFile(path string, desc v1.Descriptor) error {

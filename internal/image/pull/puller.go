@@ -54,7 +54,7 @@ func NewForPlatform(registryClient *registry.Client, store *content.Store, opera
 	return &Puller{registry: registryClient, store: store, os: operatingSystem, arch: architecture, variant: variant}, nil
 }
 
-// Pull resolves input, selects linux/amd64 from an index when necessary, and
+// Pull resolves input, selects the configured node platform from an index, and
 // ensures the manifest, config, and every compressed layer blob are present
 // and digest-verified in the content store.
 func (p *Puller) Pull(ctx context.Context, input string) (Result, error) {

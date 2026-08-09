@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sync"
+	"time"
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 
@@ -20,10 +22,16 @@ import (
 )
 
 type Manager struct {
+	mu        sync.Mutex
 	content   *content.Store
 	puller    *pull.Puller
 	unpacker  *unpack.Unpacker
 	snapshots *snapshot.Manager
+}
+type GCResult struct {
+	BlobsRemoved   int
+	LayersRemoved  int
+	BytesReclaimed int64
 }
 type Prepared struct {
 	RootFS     string
@@ -53,6 +61,12 @@ func New(root string, client *http.Client, credentials registry.CredentialFunc, 
 }
 
 func (m *Manager) Prepare(ctx context.Context, imageRef, snapshotID string) (Prepared, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.prepare(ctx, imageRef, snapshotID)
+}
+
+func (m *Manager) prepare(ctx context.Context, imageRef, snapshotID string) (Prepared, error) {
 	result, err := m.puller.Pull(ctx, imageRef)
 	if err != nil {
 		return Prepared{}, err
@@ -76,4 +90,30 @@ func (m *Manager) Prepare(ctx context.Context, imageRef, snapshotID string) (Pre
 	return Prepared{RootFS: snap.Merged, Image: result.Image, Manifest: result.Manifest, SnapshotID: snapshotID}, nil
 }
 
-func (m *Manager) Remove(snapshotID string) error { return m.snapshots.Remove(snapshotID) }
+func (m *Manager) Remove(snapshotID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.snapshots.Remove(snapshotID)
+}
+
+// Collect reclaims unreferenced image data. Prepare, Remove, and Collect are
+// serialized so the reference snapshot used by the collector is stable.
+func (m *Manager) Collect(ctx context.Context, grace time.Duration) (GCResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	activeLayers, err := m.snapshots.ActiveLowerDirs()
+	if err != nil {
+		return GCResult{}, err
+	}
+	layers, err := m.unpacker.Collect(ctx, activeLayers, grace)
+	if err != nil {
+		return GCResult{}, err
+	}
+	// Blobs are staging data after verified unpacking. The grace period protects
+	// recent downloads; manager serialization protects the active pull path.
+	blobs, err := m.content.Collect(ctx, nil, grace)
+	if err != nil {
+		return GCResult{}, err
+	}
+	return GCResult{BlobsRemoved: blobs.Removed, LayersRemoved: layers.Removed, BytesReclaimed: blobs.Bytes + layers.Bytes}, nil
+}

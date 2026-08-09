@@ -95,3 +95,34 @@ func TestEqualStringsOrderIsSignificant(t *testing.T) {
 		t.Fatal("layer order must be significant")
 	}
 }
+
+func TestActiveLowerDirsFailsClosedAndReturnsReferences(t *testing.T) {
+	m, _ := NewManager(t.TempDir())
+	dir := filepath.Join(m.root, "container-1")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lowers := []string{"/layers/sha256/one", "/layers/sha256/two"}
+	if err := saveRecord(dir, Record{Version: 1, ID: "container-1", LowerDirs: lowers}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := m.ActiveLowerDirs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lower := range lowers {
+		if _, ok := active[lower]; !ok {
+			t.Fatalf("missing lower %s", lower)
+		}
+	}
+	bad := filepath.Join(m.root, "container-2")
+	if err := os.Mkdir(bad, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, "state.json"), []byte("bad"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ActiveLowerDirs(); err == nil {
+		t.Fatal("corrupt snapshot record did not stop collection")
+	}
+}
