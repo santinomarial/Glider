@@ -15,7 +15,7 @@ Passing unit tests alone does not close a row.
 | Control-plane HA | P0 | One process is demonstrated | Three-member etcd and multiple API/controller instances pass leader/failover tests without duplicate authority |
 | Backup and disaster recovery | P0 | None | Automated etcd snapshot, verified restore, recovery-point/runbook test, and corrupt-backup rejection |
 | Upgrades and schema migration | P0 | No compatibility or migration machinery | Version-skew policy, forward/backward migration, canary upgrade, and rollback test |
-| Node lifecycle | P0 | Lease fencing exists; join/drain UX incomplete | Authenticated join, cordon/drain, safe removal, certificate renewal, and replacement tests |
+| Node lifecycle | P0 | Lease fencing, cordon/drain, revision-safe task deletion, and finalizer-style workload deletion exist | Authenticated join, safe node removal, automated certificate renewal, and replacement tests |
 | Storage and disk pressure | P0 | Reference-safe image GC, periodic reclamation, and launch admission thresholds implemented | Workload eviction policy and real disk-exhaustion recovery qualification |
 | Network policy and exposure | P0 | Overlay/NAT/service DNS exist | Ingress/egress policy, service data plane, firewall persistence, MTU validation, and multi-node tests |
 | Observability | P0 | Basic metrics and durable event objects | Structured process logs, bounded event retention, latency/error/saturation metrics, alerts, dashboards, and trace correlation |

@@ -147,6 +147,24 @@ func run(ctx context.Context, c client, args []string) error {
 			}
 		}
 		return errors.New("workload not found")
+	case "delete":
+		if len(args) != 3 || args[1] != "workload" {
+			return errors.New("usage: glider delete workload WORKLOAD")
+		}
+		result, err := c.call(ctx, "ListWorkloads", map[string]any{})
+		if err != nil {
+			return err
+		}
+		var workloads []api.Workload
+		if err := items(result, &workloads); err != nil {
+			return err
+		}
+		for _, workload := range workloads {
+			if workload.Metadata.ID == args[2] || workload.Metadata.Name == args[2] {
+				return printCall(ctx, c, "DeleteWorkload", map[string]any{"id": workload.Metadata.ID, "revision": workload.Metadata.Revision})
+			}
+		}
+		return errors.New("workload not found")
 	case "nodes":
 		return list(ctx, c, "ListNodes")
 	case "drain":
@@ -342,7 +360,7 @@ func env(k, fallback string) string {
 	return fallback
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|nodes|drain|ps|inspect|logs|exec|stats|events")
+	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|delete|nodes|drain|ps|inspect|logs|exec|stats|events")
 	os.Exit(2)
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "glider:", err); os.Exit(1) }

@@ -43,6 +43,38 @@ func (f *fakeStore) DeleteTask(_ context.Context, id string, _ int64) error {
 	delete(f.tasks, id)
 	return nil
 }
+func (f *fakeStore) DeleteWorkload(_ context.Context, id string, _ int64) error {
+	delete(f.workloads, id)
+	return nil
+}
+
+func TestDeletingWorkloadRemovesOwnedTasksBeforeResource(t *testing.T) {
+	now := time.Now().UTC()
+	s := &fakeStore{workloads: map[string]api.Workload{}, tasks: map[string]api.Task{}}
+	w := api.Workload{Metadata: api.Metadata{ID: "api", Revision: 3, DeletionTimestamp: &now}, Spec: api.WorkloadSpec{Template: api.TaskSpec{Image: "app"}}}
+	s.workloads[w.Metadata.ID] = w
+	s.tasks["owned"] = api.Task{Metadata: api.Metadata{ID: "owned", Revision: 4}, Spec: api.TaskSpec{WorkloadID: "api"}}
+	s.tasks["other"] = api.Task{Metadata: api.Metadata{ID: "other", Revision: 5}, Spec: api.TaskSpec{WorkloadID: "other"}}
+	c, _ := New(s)
+	if err := c.Reconcile(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.workloads["api"]; !ok {
+		t.Fatal("workload removed before owned task absence was observed")
+	}
+	if _, ok := s.tasks["owned"]; ok {
+		t.Fatal("owned task was not removed")
+	}
+	if _, ok := s.tasks["other"]; !ok {
+		t.Fatal("unrelated task was removed")
+	}
+	if err := c.Reconcile(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.workloads["api"]; ok {
+		t.Fatal("workload finalizer did not complete")
+	}
+}
 func TestReplicaScaleUpAndDownDeterministically(t *testing.T) {
 	s := &fakeStore{workloads: map[string]api.Workload{}, tasks: map[string]api.Task{}}
 	w := api.Workload{Metadata: api.Metadata{ID: "api", Revision: 1}, Spec: api.WorkloadSpec{Replicas: 3, Template: api.TaskSpec{Image: "example/app"}}}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -131,10 +132,52 @@ func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*struct
 	if err := decode(in, &workload); err != nil {
 		return nil, invalid(err)
 	}
+	if workload.Metadata.DeletionTimestamp != nil {
+		return nil, invalid(errors.New("deletion_timestamp is server managed"))
+	}
 	if err := admission.Workload(workload); err != nil {
 		return nil, invalid(err)
 	}
+	if workload.Metadata.Revision > 0 {
+		current, err := s.store.GetWorkload(ctx, workload.Metadata.ID)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		if current.Metadata.DeletionTimestamp != nil {
+			return nil, status.Error(codes.FailedPrecondition, "deleting workload is immutable")
+		}
+	}
 	saved, err := s.store.PutWorkload(ctx, workload, workload.Metadata.Revision)
+	return encode(saved, mapError(err))
+}
+func (s *Service) DeleteWorkload(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	id, err := requiredString(in, "id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	expected, err := requiredRevision(in, "revision")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	workload, err := s.store.GetWorkload(ctx, id)
+	if errors.Is(err, storeapi.ErrNotFound) {
+		return encode(map[string]any{"deleted": id}, nil)
+	}
+	if err != nil {
+		return nil, mapError(err)
+	}
+	if workload.Metadata.DeletionTimestamp != nil {
+		return encode(workload, nil)
+	}
+	if workload.Metadata.Revision != expected {
+		return nil, mapError(storeapi.ErrConflict)
+	}
+	now := time.Now().UTC()
+	workload.Metadata.DeletionTimestamp = &now
+	workload.Spec.Replicas = 0
+	workload.Status.RolloutPhase = "Deleting"
+	workload.Status.RolloutMessage = "waiting for owned tasks to terminate"
+	saved, err := s.store.PutWorkload(ctx, workload, expected)
 	return encode(saved, mapError(err))
 }
 func (s *Service) ListWorkloads(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
@@ -260,6 +303,7 @@ type server interface {
 	DrainNode(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListAssignments(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	DeleteWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListWorkloads(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutService(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListServices(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -315,6 +359,9 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("PutWorkload", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.PutWorkload(c, r)
+	}),
+	unary("DeleteWorkload", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.DeleteWorkload(c, r)
 	}),
 	unary("ListWorkloads", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListWorkloads(c, r)

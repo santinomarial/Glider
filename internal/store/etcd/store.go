@@ -180,6 +180,21 @@ func (s *Store) GetNode(ctx context.Context, id string) (api.Node, error) {
 	node.Metadata.Revision = kv.ModRevision
 	return node, nil
 }
+func (s *Store) GetWorkload(ctx context.Context, id string) (api.Workload, error) {
+	var workload api.Workload
+	if !validID(id) {
+		return workload, storeapi.ErrNotFound
+	}
+	kv, err := getOne(ctx, s.client, s.key("workloads", id))
+	if err != nil {
+		return workload, err
+	}
+	if err := json.Unmarshal(kv.Value, &workload); err != nil {
+		return workload, fmt.Errorf("decode workload %s: %w", id, err)
+	}
+	workload.Metadata.Revision = kv.ModRevision
+	return workload, nil
+}
 func (s *Store) ListTasks(ctx context.Context) ([]api.Task, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("tasks"), clientv3.WithPrefix())
 	if err != nil {
@@ -213,6 +228,25 @@ func (s *Store) ListWorkloads(ctx context.Context) ([]api.Workload, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Metadata.ID < out[j].Metadata.ID })
 	return out, nil
+}
+
+func (s *Store) DeleteWorkload(ctx context.Context, id string, expected int64) error {
+	if !validID(id) {
+		return storeapi.ErrNotFound
+	}
+	key := s.key("workloads", id)
+	cmp := clientv3.Compare(clientv3.ModRevision(key), "=", expected)
+	resp, err := s.client.Txn(ctx).If(cmp).Then(clientv3.OpDelete(key)).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		if _, err := getOne(ctx, s.client, key); errors.Is(err, storeapi.ErrNotFound) {
+			return storeapi.ErrNotFound
+		}
+		return storeapi.ErrConflict
+	}
+	return nil
 }
 
 // DeleteTask removes a task and assignment and releases its reservation in one

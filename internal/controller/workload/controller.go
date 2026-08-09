@@ -18,6 +18,7 @@ import (
 type Store interface {
 	ListWorkloads(context.Context) ([]api.Workload, error)
 	PutWorkload(context.Context, api.Workload, int64) (api.Workload, error)
+	DeleteWorkload(context.Context, string, int64) error
 	ListTasks(context.Context) ([]api.Task, error)
 	PutTask(context.Context, api.Task, int64) (api.Task, error)
 	DeleteTask(context.Context, string, int64) error
@@ -83,6 +84,21 @@ func (c *Controller) Reconcile(ctx context.Context, w api.Workload) error {
 		}
 	}
 	sort.Slice(owned, func(i, j int) bool { return owned[i].Metadata.ID < owned[j].Metadata.ID })
+	if w.Metadata.DeletionTimestamp != nil {
+		for _, task := range owned {
+			if err := c.store.DeleteTask(ctx, task.Metadata.ID, task.Metadata.Revision); err != nil && !errors.Is(err, storeapi.ErrConflict) && !errors.Is(err, storeapi.ErrNotFound) {
+				return err
+			}
+		}
+		if len(owned) == 0 {
+			err := c.store.DeleteWorkload(ctx, w.Metadata.ID, w.Metadata.Revision)
+			if errors.Is(err, storeapi.ErrConflict) || errors.Is(err, storeapi.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
 	var updated, old []api.Task
 	readyTotal, updatedReady := 0, 0
 	for _, task := range owned {

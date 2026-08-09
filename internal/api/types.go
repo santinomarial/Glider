@@ -7,10 +7,11 @@ import "time"
 const Version = "glider.dev/v1"
 
 type Metadata struct {
-	ID         string `json:"id"`
-	Name       string `json:"name,omitempty"`
-	Revision   int64  `json:"revision,omitempty"`
-	Generation int64  `json:"generation,omitempty"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name,omitempty"`
+	Revision          int64      `json:"revision,omitempty"`
+	Generation        int64      `json:"generation,omitempty"`
+	DeletionTimestamp *time.Time `json:"deletion_timestamp,omitempty"`
 }
 type Resources struct {
 	CPUMilli    int64 `json:"cpu_milli"`
