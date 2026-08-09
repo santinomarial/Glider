@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_COMMIT="${GLIDER_SOURCE_COMMIT:-$(git -C "${REPO_ROOT}" rev-parse HEAD)}"
 if ! command -v go >/dev/null 2>&1; then
 	exec docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work \
-		-e GLIDER_SCHEDULE_NS_MAX -e GLIDER_SCHEDULE_BYTES_MAX -e GLIDER_LOOKUP_NS_MAX -e GLIDER_LOOKUP_BYTES_MAX \
+		-e GLIDER_SCHEDULE_NS_MAX -e GLIDER_SCHEDULE_BYTES_MAX -e GLIDER_LOOKUP_NS_MAX -e GLIDER_LOOKUP_BYTES_MAX -e GLIDER_PERFORMANCE_ITERATIONS -e GLIDER_SCHEDULE_100_P99_MAX -e GLIDER_SCHEDULE_1000_P99_MAX -e GLIDER_DISCOVERY_1000_P99_MAX -e GLIDER_SOURCE_COMMIT="${SOURCE_COMMIT}" \
 		golang:1.26 bash -o pipefail -c 'tar --exclude=./.git --exclude=./dist --exclude=./work -C /src -cf - . | tar -C /work -xf - && exec bash scripts/benchmark.sh'
 fi
 cd "${REPO_ROOT}"
@@ -21,3 +22,9 @@ printf '%s\n' "${RESULTS}" | awk \
 END { if (!seen_schedule || !seen_lookup) { print "required production benchmark missing" > "/dev/stderr"; failed=1 }; exit failed }
 '
 echo "PERFORMANCE GREEN: scheduler and discovery stayed within the production envelope"
+go run ./tools/performance-report \
+	--iterations="${GLIDER_PERFORMANCE_ITERATIONS:-2000}" \
+	--commit="${SOURCE_COMMIT}" \
+	--scheduler-100-p99-max="${GLIDER_SCHEDULE_100_P99_MAX:-250us}" \
+	--scheduler-1000-p99-max="${GLIDER_SCHEDULE_1000_P99_MAX:-750us}" \
+	--discovery-1000-p99-max="${GLIDER_DISCOVERY_1000_P99_MAX:-500ns}"
