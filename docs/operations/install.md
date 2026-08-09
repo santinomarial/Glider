@@ -27,4 +27,7 @@ job monitors `/var/lib/glider-backup`.
 `-trimpath`, a fixed source epoch, an empty Go build ID, embedded version data,
 sorted archive entries, numeric ownership, checksums, a dependency module
 inventory, and detached Ed25519 signatures. `scripts/verify-release.sh` is the
-release acceptance check.
+release acceptance check. Every release also contains an SPDX 2.3 dependency
+SBOM and an in-toto SLSA v1 provenance statement binding both architecture
+archives to the exact Git commit and SHA-256 digest. Verification fails if an
+artifact no longer matches its provenance subject.

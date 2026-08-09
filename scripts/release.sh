@@ -4,7 +4,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "${REPO_ROOT}/VERSION")"
 OUTPUT="${REPO_ROOT}/dist"
 SOURCE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "${REPO_ROOT}" log -1 --format=%ct)}"
+SOURCE_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
 SIGNING_KEY="${GLIDER_SIGNING_KEY:-}"
+if [ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]; then
+	echo "release requires a clean Git worktree" >&2
+	exit 2
+fi
 if [ -z "${SIGNING_KEY}" ] || [ ! -f "${SIGNING_KEY}" ]; then
 	echo "GLIDER_SIGNING_KEY must name an Ed25519 private key" >&2
 	exit 2
@@ -34,8 +39,10 @@ for arch in amd64 arm64; do
 	tar --sort=name --mtime="@${SOURCE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "${STAGE_ROOT}" -czf "${archive}" "$(basename "${stage}")"
 	rm -rf "${stage}"
 done
-(cd "${OUTPUT}" && sha256sum *.tar.gz > SHA256SUMS)
 go list -m -json all > "${OUTPUT}/modules.json"
+go run ./tools/release-metadata sbom --output "${OUTPUT}/sbom.spdx.json" --version "${VERSION}" --commit "${SOURCE_COMMIT}" --epoch "${SOURCE_EPOCH}"
+go run ./tools/release-metadata provenance --output "${OUTPUT}/provenance.intoto.json" --version "${VERSION}" --commit "${SOURCE_COMMIT}" --epoch "${SOURCE_EPOCH}" "${OUTPUT}"/*.tar.gz
+(cd "${OUTPUT}" && sha256sum *.tar.gz modules.json sbom.spdx.json provenance.intoto.json > SHA256SUMS)
 openssl pkeyutl -sign -rawin -inkey "${SIGNING_KEY}" -in "${OUTPUT}/SHA256SUMS" -out "${OUTPUT}/SHA256SUMS.sig"
 openssl pkey -in "${SIGNING_KEY}" -pubout -out "${OUTPUT}/release-public-key.pem"
 echo "release ${VERSION} created in ${OUTPUT}"
