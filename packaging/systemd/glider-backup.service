@@ -8,6 +8,7 @@ Type=oneshot
 User=glider
 Group=glider
 EnvironmentFile=/etc/glider/backup.env
+ExecStartPre=/usr/bin/glider-admin config validate --kind=backup --file=/etc/glider/backup.env --check-files
 ExecStart=/bin/sh -ec 'umask 077; output=/var/lib/glider-backup/glider-$$(date -u +%%Y%%m%%dT%%H%%M%%SZ).snapshot; /usr/bin/glider-admin backup $$GLIDER_BACKUP_ARGS --output "$$output"; /usr/bin/glider-admin verify --input "$$output" --key-file "$$GLIDER_BACKUP_KEY_FILE"; find /var/lib/glider-backup -type f -name "*.snapshot" -mtime +"$$GLIDER_BACKUP_RETENTION_DAYS" -delete'
 NoNewPrivileges=true
 PrivateTmp=true

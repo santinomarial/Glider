@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/backup"
+	"github.com/santinomarial/glider/internal/configcheck"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
@@ -22,7 +23,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key|backup-key|schema"))
+		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key|backup-key|schema|config"))
 	}
 	var err error
 	switch os.Args[1] {
@@ -43,12 +44,35 @@ func main() {
 		err = runBackupKey(os.Args[2:])
 	case "schema":
 		err = runSchema(os.Args[2:])
+	case "config":
+		err = runConfig(os.Args[2:])
 	default:
 		err = errors.New("unknown command")
 	}
 	if err != nil {
 		fatal(err)
 	}
+}
+
+func runConfig(args []string) error {
+	if len(args) == 0 || args[0] != "validate" {
+		return errors.New("usage: glider-admin config validate --kind controlplane|node|backup --file PATH")
+	}
+	fs := flag.NewFlagSet("config validate", flag.ContinueOnError)
+	kind := fs.String("kind", "", "controlplane, node, or backup")
+	file := fs.String("file", "", "absolute environment file path")
+	root := fs.String("root", "/", "filesystem root used to resolve referenced absolute paths")
+	checkFiles := fs.Bool("check-files", false, "validate referenced certificates, keys, modes, and executables")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	result, err := configcheck.Validate(configcheck.Options{Kind: *kind, File: *file, Root: *root, CheckFiles: *checkFiles})
+	if err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(result, "", "  ")
+	fmt.Println(string(data))
+	return nil
 }
 
 func runSchema(args []string) error {

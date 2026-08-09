@@ -22,6 +22,14 @@ service. The control plane runs as the unprivileged `glider` account. The node
 agent retains only the capabilities required for namespaces, mounts, cgroups,
 and networking and receives write access only to its state paths.
 
+Run `glider-admin config validate --kind=controlplane|node|backup --file=PATH
+--check-files` after every configuration or credential change. The validator
+parses the systemd environment format without executing it; rejects duplicate,
+unknown, placeholder, insecure, or shell-like values; requires the production
+identity/TLS/storage arguments; validates CA and leaf PEM, keypair matching,
+private modes, and executable helpers. Each packaged service runs the same
+check through `ExecStartPre` and fails closed.
+
 For automated recovery points, install `glider-backup.service` and
 `glider-backup.timer`, copy `backup.env.example` to `/etc/glider/backup.env`,
 generate `/etc/glider/backup.key` with `glider-admin backup-key`, escrow a copy

@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/glider/gliderd.env
+ExecStartPre=/usr/bin/glider-admin config validate --kind=node --file=/etc/glider/gliderd.env --check-files
 ExecStart=/usr/bin/gliderd $GLIDERD_ARGS
 Restart=always
 RestartSec=5s

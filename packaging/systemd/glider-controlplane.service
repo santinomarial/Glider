@@ -8,6 +8,7 @@ Type=simple
 User=glider
 Group=glider
 EnvironmentFile=/etc/glider/controlplane.env
+ExecStartPre=/usr/bin/glider-admin config validate --kind=controlplane --file=/etc/glider/controlplane.env --check-files
 ExecStart=/usr/bin/glider-controlplane $GLIDER_CONTROLPLANE_ARGS
 Restart=on-failure
 RestartSec=5s
