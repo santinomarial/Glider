@@ -25,6 +25,7 @@ import (
 	"github.com/santinomarial/glider/internal/observability"
 	"github.com/santinomarial/glider/internal/scheduler"
 	secretapi "github.com/santinomarial/glider/internal/secret"
+	storeapi "github.com/santinomarial/glider/internal/store"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
@@ -54,10 +55,16 @@ func main() {
 	quotaCPUMilli := flag.Int64("quota-cpu-milli", 1000000, "maximum aggregate requested CPU in millicores")
 	quotaMemoryBytes := flag.Int64("quota-memory-bytes", 1<<50, "maximum aggregate requested memory")
 	secretKeyFile := flag.String("secret-key-file", "", "path to 32-byte secret encryption key (required)")
+	eventRetention := flag.Duration("event-retention", 7*24*time.Hour, "maximum event age")
+	eventRetentionMax := flag.Int("event-retention-max", 100000, "maximum retained events")
+	eventPruneInterval := flag.Duration("event-prune-interval", 5*time.Minute, "event retention reconciliation interval")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
 		return
+	}
+	if *eventRetention <= 0 || *eventRetentionMax <= 0 || *eventPruneInterval <= 0 {
+		fatal(errors.New("event retention duration, maximum, and prune interval must be positive"))
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -166,11 +173,29 @@ func main() {
 		fmt.Fprintf(os.Stderr, "glider-controlplane: cluster DNS listening on %s/udp\n", *dnsListen)
 	}
 	go schedulePending(ctx, store, schedulerController)
+	go pruneEvents(ctx, store, *eventRetention, *eventRetentionMax, *eventPruneInterval)
 	go func() { _ = lease.NewMonitor(client, *clusterID, store, 20*time.Second, 2*time.Second).Run(ctx) }()
 	go func() { <-ctx.Done(); server.GracefulStop() }()
 	fmt.Fprintf(os.Stderr, "glider-controlplane: listening on %s\n", listener.Addr())
 	if err := server.Serve(listener); err != nil && ctx.Err() == nil {
 		fatal(err)
+	}
+}
+
+func pruneEvents(ctx context.Context, store *etcdstore.Store, retention time.Duration, maximum int, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if removed, err := store.PruneEvents(ctx, time.Now().UTC().Add(-retention), maximum); err != nil && ctx.Err() == nil && !errors.Is(err, storeapi.ErrConflict) {
+			fmt.Fprintf(os.Stderr, "glider-controlplane: event retention failed: %v\n", err)
+		} else if removed > 0 {
+			fmt.Fprintf(os.Stderr, "glider-controlplane: pruned %d expired events\n", removed)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 func split(value string) []string {

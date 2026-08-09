@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"sync"
@@ -149,6 +150,30 @@ func TestSecretPersistenceContainsOnlyAuthenticatedCiphertext(t *testing.T) {
 	}
 	if err := s.DeleteSecret(context.Background(), "database", saved.Metadata.Revision); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEventRetentionEnforcesAgeAndCountBounds(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "event-retention-cluster")
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for index, age := range []time.Duration{10 * time.Hour, 9 * time.Hour, 3 * time.Hour, 2 * time.Hour, time.Hour} {
+		id := fmt.Sprintf("event-%d", index)
+		if _, err := s.PutEvent(ctx, api.Event{Metadata: api.Metadata{ID: id}, Time: now.Add(-age), Type: "Normal", Reason: "Test", ObjectKind: "Task", ObjectID: "task"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := s.PruneEvents(ctx, now.Add(-8*time.Hour), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 3 {
+		t.Fatalf("removed = %d", removed)
+	}
+	events, err := s.ListEvents(ctx)
+	if err != nil || len(events) != 2 || events[0].Metadata.ID != "event-3" || events[1].Metadata.ID != "event-4" {
+		t.Fatalf("retained events = %+v, %v", events, err)
 	}
 }
 

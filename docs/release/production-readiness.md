@@ -18,7 +18,7 @@ Passing unit tests alone does not close a row.
 | Node lifecycle | P0 | Lease fencing, cordon/drain, revision-safe task deletion, and finalizer-style workload deletion exist | Authenticated join, safe node removal, automated certificate renewal, and replacement tests |
 | Storage and disk pressure | P0 | Reference-safe image GC, periodic reclamation, and launch admission thresholds implemented | Workload eviction policy and real disk-exhaustion recovery qualification |
 | Network policy and exposure | P0 | Overlay/NAT/service DNS exist | Ingress/egress policy, service data plane, firewall persistence, MTU validation, and multi-node tests |
-| Observability | P0 | Basic metrics and durable event objects | Structured process logs, bounded event retention, latency/error/saturation metrics, alerts, dashboards, and trace correlation |
+| Observability | P0 | Basic resource metrics plus durable events with age/count retention | Structured process logs, API latency/error/saturation metrics, alerts, dashboards, and trace correlation |
 | Packaging and host integration | P0 | Source-run scripts only | Reproducible signed binaries/packages, systemd units, dedicated users/directories, config validation, install/uninstall/upgrade tests |
 | Release security | P0 | Isolation gate exists | Dependency/SBOM scan, provenance, artifact signatures, vulnerability response policy, and independent threat-model review |
 | Reliability qualification | P0 | Unit/race/runtime and limited chaos gates | Real multi-node soak, partitions, control-plane loss, etcd member loss, disk pressure, crash storm, and recovery SLO gates |

@@ -207,8 +207,60 @@ func (s *Store) ListEvents(ctx context.Context) ([]api.Event, error) {
 		event.Metadata.Revision = kv.ModRevision
 		out = append(out, event)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Time.Before(out[j].Time) })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Time.Equal(out[j].Time) {
+			return out[i].Metadata.ID < out[j].Metadata.ID
+		}
+		return out[i].Time.Before(out[j].Time)
+	})
 	return out, nil
+}
+
+// PruneEvents enforces both age and count bounds using revision-guarded
+// batches. Events are immutable, so a conflict means the next periodic pass
+// can safely recompute retention from fresh state.
+func (s *Store) PruneEvents(ctx context.Context, before time.Time, max int) (int, error) {
+	if max <= 0 {
+		return 0, errors.New("event retention maximum must be positive")
+	}
+	events, err := s.ListEvents(ctx)
+	if err != nil {
+		return 0, err
+	}
+	excess := len(events) - max
+	if excess < 0 {
+		excess = 0
+	}
+	var doomed []api.Event
+	for index, event := range events {
+		if index < excess || event.Time.Before(before) {
+			doomed = append(doomed, event)
+		}
+	}
+	removed := 0
+	for len(doomed) > 0 {
+		batch := doomed
+		if len(batch) > 64 {
+			batch = batch[:64]
+		}
+		compares := make([]clientv3.Cmp, 0, len(batch))
+		operations := make([]clientv3.Op, 0, len(batch))
+		for _, event := range batch {
+			key := s.key("events", event.Metadata.ID)
+			compares = append(compares, clientv3.Compare(clientv3.ModRevision(key), "=", event.Metadata.Revision))
+			operations = append(operations, clientv3.OpDelete(key))
+		}
+		resp, err := s.client.Txn(ctx).If(compares...).Then(operations...).Commit()
+		if err != nil {
+			return removed, err
+		}
+		if !resp.Succeeded {
+			return removed, storeapi.ErrConflict
+		}
+		removed += len(batch)
+		doomed = doomed[len(batch):]
+	}
+	return removed, nil
 }
 func (s *Store) ListServices(ctx context.Context) ([]api.Service, error) {
 	resp, err := s.client.Get(ctx, s.kindPrefix("services"), clientv3.WithPrefix())
