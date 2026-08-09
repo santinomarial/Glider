@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
@@ -21,6 +22,7 @@ import (
 	workloadcontroller "github.com/santinomarial/glider/internal/controller/workload"
 	"github.com/santinomarial/glider/internal/controlplane"
 	"github.com/santinomarial/glider/internal/discovery"
+	"github.com/santinomarial/glider/internal/leadership"
 	"github.com/santinomarial/glider/internal/lease"
 	"github.com/santinomarial/glider/internal/observability"
 	"github.com/santinomarial/glider/internal/scheduler"
@@ -58,6 +60,7 @@ func main() {
 	eventRetention := flag.Duration("event-retention", 7*24*time.Hour, "maximum event age")
 	eventRetentionMax := flag.Int("event-retention-max", 100000, "maximum retained events")
 	eventPruneInterval := flag.Duration("event-prune-interval", 5*time.Minute, "event retention reconciliation interval")
+	instanceID := flag.String("instance-id", "", "unique control-plane replica identity (generated when empty)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version.Version)
@@ -134,8 +137,6 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	go func() { _ = workloads.Run(ctx, 2*time.Second) }()
-	go func() { _ = services.Run(ctx, 2*time.Second) }()
 	if *metricsListen != "" {
 		metricsTLS, err := transport.ServerTLSConfig(*tlsCert, *tlsKey, *clientCA)
 		if err != nil && !*insecureDevelopment {
@@ -172,14 +173,34 @@ func main() {
 		}()
 		fmt.Fprintf(os.Stderr, "glider-controlplane: cluster DNS listening on %s/udp\n", *dnsListen)
 	}
-	go schedulePending(ctx, store, schedulerController)
-	go pruneEvents(ctx, store, *eventRetention, *eventRetentionMax, *eventPruneInterval)
-	go func() { _ = lease.NewMonitor(client, *clusterID, store, 20*time.Second, 2*time.Second).Run(ctx) }()
+	if *instanceID == "" {
+		*instanceID = uuid.NewString()
+	}
+	electionPrefix := "/glider/v1/clusters/" + *clusterID + "/elections/controllers"
+	go func() {
+		err := leadership.Run(ctx, client, electionPrefix, *instanceID, func(leaderCtx context.Context) error {
+			fmt.Fprintf(os.Stderr, "glider-controlplane: replica %s acquired controller leadership\n", *instanceID)
+			return runLeaderControllers(leaderCtx, client, *clusterID, store, workloads, services, schedulerController, *eventRetention, *eventRetentionMax, *eventPruneInterval)
+		})
+		if err != nil && ctx.Err() == nil {
+			fatal(err)
+		}
+	}()
 	go func() { <-ctx.Done(); server.GracefulStop() }()
 	fmt.Fprintf(os.Stderr, "glider-controlplane: listening on %s\n", listener.Addr())
 	if err := server.Serve(listener); err != nil && ctx.Err() == nil {
 		fatal(err)
 	}
+}
+
+func runLeaderControllers(ctx context.Context, client *clientv3.Client, clusterID string, store *etcdstore.Store, workloads *workloadcontroller.Controller, services *servicecontroller.Controller, schedulerController *scheduler.Controller, eventRetention time.Duration, eventMaximum int, pruneInterval time.Duration) error {
+	go func() { _ = workloads.Run(ctx, 2*time.Second) }()
+	go func() { _ = services.Run(ctx, 2*time.Second) }()
+	go schedulePending(ctx, store, schedulerController)
+	go pruneEvents(ctx, store, eventRetention, eventMaximum, pruneInterval)
+	go func() { _ = lease.NewMonitor(client, clusterID, store, 20*time.Second, 2*time.Second).Run(ctx) }()
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func pruneEvents(ctx context.Context, store *etcdstore.Store, retention time.Duration, maximum int, interval time.Duration) {
