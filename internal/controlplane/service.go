@@ -18,6 +18,7 @@ import (
 	"github.com/santinomarial/glider/internal/scheduler"
 	storeapi "github.com/santinomarial/glider/internal/store"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
+	"github.com/santinomarial/glider/internal/transport"
 )
 
 const ServiceName = "glider.v1.ControlPlane"
@@ -56,6 +57,9 @@ func (s *Service) PutNode(ctx context.Context, in *structpb.Struct) (*structpb.S
 	}
 	if err := admission.Node(node); err != nil {
 		return nil, invalid(err)
+	}
+	if principal, ok := transport.PrincipalFromContext(ctx); ok && !nodeCanMutate(principal, node.Metadata.ID) {
+		return nil, status.Error(codes.PermissionDenied, "node identity cannot mutate another node")
 	}
 	saved, err := s.store.PutNode(ctx, node, node.Metadata.Revision)
 	return encode(saved, mapError(err))
@@ -118,6 +122,9 @@ func (s *Service) PutEvent(ctx context.Context, in *structpb.Struct) (*structpb.
 	if err := admission.Event(event); err != nil {
 		return nil, invalid(err)
 	}
+	if principal, ok := transport.PrincipalFromContext(ctx); ok && !nodeCanMutate(principal, event.NodeID) {
+		return nil, status.Error(codes.PermissionDenied, "node identity cannot report for another node")
+	}
 	saved, err := s.store.PutEvent(ctx, event)
 	return encode(saved, mapError(err))
 }
@@ -173,6 +180,9 @@ func requiredString(in *structpb.Struct, key string) (string, error) {
 	return value, nil
 }
 func invalid(err error) error { return status.Error(codes.InvalidArgument, err.Error()) }
+func nodeCanMutate(principal transport.Principal, nodeID string) bool {
+	return !principal.Roles["node"] || principal.Name == nodeID
+}
 func mapError(err error) error {
 	switch {
 	case err == nil:
