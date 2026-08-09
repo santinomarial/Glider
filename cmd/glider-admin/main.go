@@ -22,7 +22,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key|schema"))
+		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key|backup-key|schema"))
 	}
 	var err error
 	switch os.Args[1] {
@@ -39,6 +39,8 @@ func main() {
 		err = runPKI(os.Args[2:])
 	case "secret-key":
 		err = runSecretKey(os.Args[2:])
+	case "backup-key":
+		err = runBackupKey(os.Args[2:])
 	case "schema":
 		err = runSchema(os.Args[2:])
 	default:
@@ -137,6 +139,42 @@ func runSecretKey(args []string) error {
 		return closeErr
 	}
 	fmt.Printf("secret_key=%s mode=0600 bytes=32\n", *output)
+	return nil
+}
+
+func runBackupKey(args []string) error {
+	fs := flag.NewFlagSet("backup-key", flag.ContinueOnError)
+	output := fs.String("output", "", "new 64-byte backup encryption and authentication key path")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *output == "" || !filepath.IsAbs(*output) {
+		return errors.New("--output must be an absolute path")
+	}
+	key := make([]byte, 64)
+	if _, err := rand.Read(key); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(*output), 0o750); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(*output, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(key); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		_ = os.Remove(*output)
+		return err
+	}
+	if closeErr != nil {
+		_ = os.Remove(*output)
+		return closeErr
+	}
+	fmt.Printf("backup_key=%s mode=0600 bytes=64\n", *output)
 	return nil
 }
 

@@ -1,0 +1,25 @@
+[Unit]
+Description=Create and verify an encrypted Glider etcd backup
+After=network-online.target etcd.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=glider
+Group=glider
+EnvironmentFile=/etc/glider/backup.env
+ExecStart=/bin/sh -ec 'umask 077; output=/var/lib/glider-backup/glider-$$(date -u +%%Y%%m%%dT%%H%%M%%SZ).snapshot; /usr/bin/glider-admin backup $$GLIDER_BACKUP_ARGS --output "$$output"; /usr/bin/glider-admin verify --input "$$output" --key-file "$$GLIDER_BACKUP_KEY_FILE"; find /var/lib/glider-backup -type f -name "*.snapshot" -mtime +"$$GLIDER_BACKUP_RETENTION_DAYS" -delete'
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/glider-backup
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+UMask=0077

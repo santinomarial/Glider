@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule encrypted Glider etcd backups
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+Unit=glider-backup.service
+
+[Install]
+WantedBy=timers.target

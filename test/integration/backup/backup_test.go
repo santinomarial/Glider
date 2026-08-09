@@ -8,6 +8,7 @@ import (
 	"go.etcd.io/etcd/etcdutl/v3/snapshot"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -35,6 +36,7 @@ func TestEncryptedSnapshotRestoresAuthoritativeState(t *testing.T) {
 	}
 	source.Close()
 	destination.Close()
+	assertCorruptAndWrongKeyRejected(t, encrypted, key)
 	decrypted := filepath.Join(t.TempDir(), "decrypted.db")
 	source, _ = os.Open(encrypted)
 	destination, _ = os.Create(decrypted)
@@ -56,6 +58,38 @@ func TestEncryptedSnapshotRestoresAuthoritativeState(t *testing.T) {
 	response, err := restored.Get(ctx, "/glider/v1/clusters/test/tasks/task")
 	if err != nil || len(response.Kvs) != 1 {
 		t.Fatalf("restored state missing: response=%v err=%v", response, err)
+	}
+}
+
+func assertCorruptAndWrongKeyRejected(t *testing.T, encrypted string, key []byte) {
+	t.Helper()
+	wrongKey := bytes.Repeat([]byte{8}, 64)
+	source, err := os.Open(encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = gliderbackup.Decrypt(io.Discard, source, wrongKey); err == nil {
+		source.Close()
+		t.Fatal("backup encrypted with an unavailable key was accepted")
+	}
+	source.Close()
+
+	data, err := os.ReadFile(encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data[len(data)/2] ^= 0x80
+	corrupt := filepath.Join(t.TempDir(), "corrupt.snapshot")
+	if err = os.WriteFile(corrupt, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source, err = os.Open(corrupt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if err = gliderbackup.Decrypt(io.Discard, source, key); err == nil {
+		t.Fatal("corrupt backup was accepted")
 	}
 }
 func start(t *testing.T, dir string, clientURL, peerURL url.URL) (*clientv3.Client, *embed.Etcd) {

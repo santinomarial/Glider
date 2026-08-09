@@ -1,4 +1,5 @@
 d /var/lib/glider 0750 root root -
 d /var/lib/glider-controlplane 0750 glider glider -
+d /var/lib/glider-backup 0700 glider glider -
 d /run/glider 0750 root root -
 d /etc/glider/pki 0750 root glider -

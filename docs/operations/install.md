@@ -15,6 +15,13 @@ service. The control plane runs as the unprivileged `glider` account. The node
 agent retains only the capabilities required for namespaces, mounts, cgroups,
 and networking and receives write access only to its state paths.
 
+For automated recovery points, install `glider-backup.service` and
+`glider-backup.timer`, copy `backup.env.example` to `/etc/glider/backup.env`,
+generate `/etc/glider/backup.key` with `glider-admin backup-key`, escrow a copy
+of that key outside the cluster, then run `systemctl enable --now
+glider-backup.timer`. Do not enable the timer until an off-host immutable-copy
+job monitors `/var/lib/glider-backup`.
+
 `scripts/release.sh` requires an Ed25519 private key through
 `GLIDER_SIGNING_KEY`; it refuses unsigned releases. Builds use `CGO_ENABLED=0`,
 `-trimpath`, a fixed source epoch, an empty Go build ID, embedded version data,
