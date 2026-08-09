@@ -165,7 +165,7 @@ func main() {
 	errs := make(chan error, 2)
 	go func() { errs <- daemon.Run(runCtx) }()
 	go func() { _ = agent.NewHealthDaemon(nodeID, store, driver, time.Second).Run(runCtx) }()
-	go reconcileOverlay(runCtx, nodeID, store, driver, resync)
+	go reconcileNetworking(runCtx, nodeID, store, driver, resync)
 	if imageGCInterval > 0 {
 		go collectImages(runCtx, driver, imageGCInterval)
 	}
@@ -213,9 +213,10 @@ func fatal(err error) { fmt.Fprintln(os.Stderr, "gliderd:", err); os.Exit(1) }
 
 type nodeLister interface {
 	ListNodes(context.Context) ([]api.Node, error)
+	ListServices(context.Context) ([]api.Service, error)
 }
 
-func reconcileOverlay(ctx context.Context, nodeID string, store nodeLister, driver *agent.RuntimeDriver, period time.Duration) {
+func reconcileNetworking(ctx context.Context, nodeID string, store nodeLister, driver *agent.RuntimeDriver, period time.Duration) {
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 	for {
@@ -233,6 +234,9 @@ func reconcileOverlay(ctx context.Context, nodeID string, store nodeLister, driv
 			if local.Spec.TunnelAddress != "" {
 				_ = driver.EnsureOverlay(local.Spec.TunnelAddress, peers, 1450)
 			}
+		}
+		if services, err := store.ListServices(ctx); err == nil {
+			_ = driver.EnsureServices(services)
 		}
 		select {
 		case <-ctx.Done():

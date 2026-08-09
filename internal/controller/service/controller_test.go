@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
-	"github.com/santinomarial/glider/internal/api"
+	"net/netip"
 	"testing"
+
+	"github.com/santinomarial/glider/internal/api"
 )
 
 type fakeStore struct {
@@ -37,5 +39,24 @@ func TestReconcilePublishesOnlyReadyMatchingValidEndpoints(t *testing.T) {
 	got := f.services["api"].Status.Endpoints
 	if len(got) != 1 || got[0].TaskID != "ready" || got[0].Port != 8080 {
 		t.Fatalf("endpoints=%+v", got)
+	}
+	if address, err := netip.ParseAddr(f.services["api"].Status.ClusterIP); err != nil || !servicePrefix.Contains(address) {
+		t.Fatalf("cluster IP = %q, %v", f.services["api"].Status.ClusterIP, err)
+	}
+}
+
+func TestAllocateClusterIPResolvesDeterministicCollision(t *testing.T) {
+	service := api.Service{Metadata: api.Metadata{ID: "api"}}
+	first, err := allocateClusterIP(service, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	occupied := []api.Service{{Metadata: api.Metadata{ID: "other"}, Status: api.ServiceStatus{ClusterIP: first}}}
+	second, err := allocateClusterIP(service, occupied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == first {
+		t.Fatal("service address collision was not resolved")
 	}
 }

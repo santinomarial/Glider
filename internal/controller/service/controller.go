@@ -3,6 +3,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"net/netip"
 	"reflect"
@@ -41,6 +43,14 @@ func (c *Controller) Reconcile(ctx context.Context, service api.Service) error {
 	if service.Spec.Port == 0 || service.Spec.TargetPort == 0 {
 		return errors.New("service ports must be non-zero")
 	}
+	services, err := c.store.ListServices(ctx)
+	if err != nil {
+		return err
+	}
+	clusterIP, err := allocateClusterIP(service, services)
+	if err != nil {
+		return err
+	}
 	tasks, err := c.store.ListTasks(ctx)
 	if err != nil {
 		return err
@@ -56,9 +66,10 @@ func (c *Controller) Reconcile(ctx context.Context, service api.Service) error {
 		endpoints = append(endpoints, api.ServiceEndpoint{TaskID: task.Metadata.ID, NodeID: task.Status.NodeID, Address: task.Status.Address, Port: service.Spec.TargetPort, Generation: task.Status.AssignmentGeneration})
 	}
 	sort.Slice(endpoints, func(i, j int) bool { return endpoints[i].TaskID < endpoints[j].TaskID })
-	if reflect.DeepEqual(service.Status.Endpoints, endpoints) {
+	if service.Status.ClusterIP == clusterIP && reflect.DeepEqual(service.Status.Endpoints, endpoints) {
 		return nil
 	}
+	service.Status.ClusterIP = clusterIP
 	service.Status.Endpoints = endpoints
 	service.Status.UpdatedAt = c.now().UTC()
 	_, err = c.store.PutService(ctx, service, service.Metadata.Revision)
@@ -66,6 +77,36 @@ func (c *Controller) Reconcile(ctx context.Context, service api.Service) error {
 		return nil
 	}
 	return err
+}
+
+var servicePrefix = netip.MustParsePrefix("10.96.0.0/16")
+
+func allocateClusterIP(service api.Service, services []api.Service) (string, error) {
+	used := map[netip.Addr]string{}
+	for _, candidate := range services {
+		if candidate.Metadata.ID == service.Metadata.ID || candidate.Status.ClusterIP == "" {
+			continue
+		}
+		address, err := netip.ParseAddr(candidate.Status.ClusterIP)
+		if err == nil && servicePrefix.Contains(address) {
+			used[address] = candidate.Metadata.ID
+		}
+	}
+	if current, err := netip.ParseAddr(service.Status.ClusterIP); err == nil && servicePrefix.Contains(current) {
+		if _, collision := used[current]; !collision {
+			return current.String(), nil
+		}
+	}
+	sum := sha256.Sum256([]byte(service.Metadata.ID))
+	start := int(binary.BigEndian.Uint16(sum[:2])) % 65534
+	for offset := range 65534 {
+		host := (start+offset)%65534 + 1
+		address := netip.AddrFrom4([4]byte{10, 96, byte(host >> 8), byte(host)})
+		if _, collision := used[address]; !collision {
+			return address.String(), nil
+		}
+	}
+	return "", errors.New("service address pool is exhausted")
 }
 func (c *Controller) Run(ctx context.Context, period time.Duration) error {
 	if period <= 0 {

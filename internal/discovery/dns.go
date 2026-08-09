@@ -1,4 +1,4 @@
-// Package discovery serves service endpoint addresses through cluster DNS.
+// Package discovery serves stable service virtual addresses through cluster DNS.
 package discovery
 
 import (
@@ -42,10 +42,8 @@ func (d *DNS) Lookup(ctx context.Context, name string) ([]net.IP, error) {
 		if strings.ToLower(service.Metadata.Name) != id && strings.ToLower(service.Metadata.ID) != id {
 			continue
 		}
-		for _, ep := range service.Status.Endpoints {
-			if ip := net.ParseIP(ep.Address).To4(); ip != nil {
-				out = append(out, ip)
-			}
+		if ip := net.ParseIP(service.Status.ClusterIP).To4(); ip != nil && len(service.Status.Endpoints) > 0 {
+			out = append(out, ip)
 		}
 		break
 	}

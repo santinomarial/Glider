@@ -25,6 +25,10 @@ func (m *Manager) reconcileNAT() error {
 	if err != nil {
 		return err
 	}
+	services, err := m.loadServices()
+	if err != nil {
+		return err
+	}
 	conn := &nftables.Conn{}
 	tables, err := conn.ListTables()
 	if err != nil {
@@ -63,10 +67,38 @@ func (m *Manager) reconcileNAT() error {
 			}
 		}
 	}
+	for _, service := range services {
+		for index, endpoint := range service.Endpoints {
+			for _, chain := range []*nftables.Chain{pre, output} {
+				expressions := serviceMatch(service)
+				remaining := len(service.Endpoints) - index
+				if remaining > 1 {
+					expressions = append(expressions, &expr.Numgen{Register: 1, Modulus: uint32(remaining), Type: unix.NFT_NG_RANDOM}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{0, 0, 0, 0}})
+				}
+				port := make([]byte, 2)
+				binary.BigEndian.PutUint16(port, endpoint.Port)
+				expressions = append(expressions, &expr.Immediate{Register: 1, Data: endpoint.Address.AsSlice()}, &expr.Immediate{Register: 2, Data: port}, &expr.NAT{Type: expr.NATTypeDestNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2})
+				conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: expressions})
+			}
+		}
+	}
 	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("apply Glider nftables rules: %w", err)
 	}
 	return nil
+}
+
+func serviceMatch(service Service) []expr.Any {
+	port := make([]byte, 2)
+	binary.BigEndian.PutUint16(port, service.Port)
+	return []expr.Any{
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: service.ClusterIP.AsSlice()},
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_TCP}},
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: port},
+	}
 }
 
 func (m *Manager) loadEndpoints() ([]Endpoint, error) {

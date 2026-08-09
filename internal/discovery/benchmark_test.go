@@ -11,7 +11,7 @@ func BenchmarkLookup1000Endpoints(b *testing.B) {
 	for i := range endpoints {
 		endpoints[i] = api.ServiceEndpoint{Address: "10.64.0.2"}
 	}
-	d, _ := NewDNS(fakeLister{[]api.Service{{Metadata: api.Metadata{ID: "api"}, Status: api.ServiceStatus{Endpoints: endpoints}}}})
+	d, _ := NewDNS(fakeLister{[]api.Service{{Metadata: api.Metadata{ID: "api"}, Status: api.ServiceStatus{ClusterIP: "10.96.0.42", Endpoints: endpoints}}}})
 	ctx := context.Background()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

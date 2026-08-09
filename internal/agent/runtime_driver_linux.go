@@ -71,6 +71,26 @@ func (d *RuntimeDriver) EnsureOverlay(localTunnel string, peers []api.Node, mtu 
 	return d.network.EnsureOverlay(local, desired, mtu)
 }
 
+func (d *RuntimeDriver) EnsureServices(services []api.Service) error {
+	desired := make([]containernetwork.Service, 0, len(services))
+	for _, service := range services {
+		clusterIP, err := netip.ParseAddr(service.Status.ClusterIP)
+		if err != nil {
+			continue
+		}
+		item := containernetwork.Service{ID: service.Metadata.ID, ClusterIP: clusterIP, Port: service.Spec.Port}
+		for _, endpoint := range service.Status.Endpoints {
+			address, err := netip.ParseAddr(endpoint.Address)
+			if err != nil {
+				continue
+			}
+			item.Endpoints = append(item.Endpoints, containernetwork.ServiceEndpoint{Address: address, Port: endpoint.Port})
+		}
+		desired = append(desired, item)
+	}
+	return d.network.EnsureServices(desired)
+}
+
 func (d *RuntimeDriver) CheckProbe(ctx context.Context, a api.Assignment, probe api.Probe) error {
 	endpoint, err := d.network.Endpoint(containerID(a))
 	if err != nil {

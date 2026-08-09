@@ -192,6 +192,7 @@ type ServiceEndpoint struct {
 	Generation int64  `json:"generation"`
 }
 type ServiceStatus struct {
+	ClusterIP string            `json:"cluster_ip,omitempty"`
 	Endpoints []ServiceEndpoint `json:"endpoints,omitempty"`
 	UpdatedAt time.Time         `json:"updated_at,omitempty"`
 }

@@ -243,6 +243,17 @@ func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structp
 	if err := requireIdempotencyKey(service.Metadata); err != nil {
 		return nil, invalid(err)
 	}
+	if service.Metadata.Revision == 0 {
+		if service.Status.ClusterIP != "" || len(service.Status.Endpoints) != 0 {
+			return nil, invalid(errors.New("service status is server managed"))
+		}
+	} else {
+		current, err := s.store.GetService(ctx, service.Metadata.ID)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		service.Status = current.Status
+	}
 	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
 	if errors.Is(err, storeapi.ErrConflict) {
 		current, getErr := s.store.GetService(ctx, service.Metadata.ID)
