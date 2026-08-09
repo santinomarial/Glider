@@ -148,23 +148,31 @@ func run(ctx context.Context, c client, args []string) error {
 		}
 		return errors.New("workload not found")
 	case "delete":
-		if len(args) != 3 || args[1] != "workload" {
-			return errors.New("usage: glider delete workload WORKLOAD")
+		if len(args) != 3 || (args[1] != "workload" && args[1] != "service") {
+			return errors.New("usage: glider delete workload|service ID")
 		}
-		result, err := c.call(ctx, "ListWorkloads", map[string]any{})
+		kind := args[1]
+		method := "ListWorkloads"
+		deleteMethod := "DeleteWorkload"
+		if kind == "service" {
+			method, deleteMethod = "ListServices", "DeleteService"
+		}
+		result, err := c.call(ctx, method, map[string]any{})
 		if err != nil {
 			return err
 		}
-		var workloads []api.Workload
-		if err := items(result, &workloads); err != nil {
+		var resources []struct {
+			Metadata api.Metadata `json:"metadata"`
+		}
+		if err := items(result, &resources); err != nil {
 			return err
 		}
-		for _, workload := range workloads {
-			if workload.Metadata.ID == args[2] || workload.Metadata.Name == args[2] {
-				return printCall(ctx, c, "DeleteWorkload", map[string]any{"id": workload.Metadata.ID, "revision": workload.Metadata.Revision})
+		for _, resource := range resources {
+			if resource.Metadata.ID == args[2] || resource.Metadata.Name == args[2] {
+				return printCall(ctx, c, deleteMethod, map[string]any{"id": resource.Metadata.ID, "revision": resource.Metadata.Revision})
 			}
 		}
-		return errors.New("workload not found")
+		return fmt.Errorf("%s not found", kind)
 	case "nodes":
 		return list(ctx, c, "ListNodes")
 	case "drain":

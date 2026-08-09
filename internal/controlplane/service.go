@@ -195,6 +195,21 @@ func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structp
 	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
 	return encode(saved, mapError(err))
 }
+func (s *Service) DeleteService(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	id, err := requiredString(in, "id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	expected, err := requiredRevision(in, "revision")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	err = s.store.DeleteService(ctx, id, expected)
+	if errors.Is(err, storeapi.ErrNotFound) {
+		err = nil
+	}
+	return encode(map[string]any{"deleted": id}, mapError(err))
+}
 func (s *Service) ListServices(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
 	values, err := s.store.ListServices(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
@@ -306,6 +321,7 @@ type server interface {
 	DeleteWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListWorkloads(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutService(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	DeleteService(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListServices(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutEvent(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListEvents(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -368,6 +384,9 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("PutService", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.PutService(c, r)
+	}),
+	unary("DeleteService", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.DeleteService(c, r)
 	}),
 	unary("ListServices", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListServices(c, r)

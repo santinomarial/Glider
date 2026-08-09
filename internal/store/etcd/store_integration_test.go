@@ -84,6 +84,32 @@ func TestDeleteAssignedTaskAtomicallyReleasesReservation(t *testing.T) {
 	}
 }
 
+func TestDeleteServiceRequiresCurrentRevision(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "service-delete-cluster")
+	ctx := context.Background()
+	service, err := s.PutService(ctx, api.Service{Metadata: api.Metadata{ID: "web"}, Spec: api.ServiceSpec{Selector: map[string]string{"app": "web"}, Port: 80, TargetPort: 8080}}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := service
+	updated.Spec.TargetPort = 9090
+	updated, err = s.PutService(ctx, updated, service.Metadata.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteService(ctx, "web", service.Metadata.Revision); !errors.Is(err, storeapi.ErrConflict) {
+		t.Fatalf("stale delete error = %v", err)
+	}
+	if err := s.DeleteService(ctx, "web", updated.Metadata.Revision); err != nil {
+		t.Fatal(err)
+	}
+	services, err := s.ListServices(ctx)
+	if err != nil || len(services) != 0 {
+		t.Fatalf("services = %v, %v", services, err)
+	}
+}
+
 func TestEvictUnreachableNodeRequeuesWithNewGeneration(t *testing.T) {
 	client := startEtcd(t)
 	s, _ := New(client, "evict-cluster")

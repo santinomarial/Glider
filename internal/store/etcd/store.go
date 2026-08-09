@@ -249,6 +249,24 @@ func (s *Store) DeleteWorkload(ctx context.Context, id string, expected int64) e
 	return nil
 }
 
+func (s *Store) DeleteService(ctx context.Context, id string, expected int64) error {
+	if !validID(id) {
+		return storeapi.ErrNotFound
+	}
+	key := s.key("services", id)
+	resp, err := s.client.Txn(ctx).If(clientv3.Compare(clientv3.ModRevision(key), "=", expected)).Then(clientv3.OpDelete(key)).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		if _, err := getOne(ctx, s.client, key); errors.Is(err, storeapi.ErrNotFound) {
+			return storeapi.ErrNotFound
+		}
+		return storeapi.ErrConflict
+	}
+	return nil
+}
+
 // DeleteTask removes a task and assignment and releases its reservation in one
 // transaction, so replica scale-down cannot leak capacity or race a bind.
 func (s *Store) DeleteTask(ctx context.Context, id string, expected int64) error {
