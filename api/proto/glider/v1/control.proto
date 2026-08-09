@@ -9,6 +9,7 @@ import "google/protobuf/struct.proto";
 // package and apiVersion field are stable compatibility boundaries.
 service ControlPlane {
   rpc PutTask(google.protobuf.Struct) returns (google.protobuf.Struct);
+  rpc DeleteTask(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc PutNode(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc GetTask(google.protobuf.Struct) returns (google.protobuf.Struct);
   rpc ListTasks(google.protobuf.Struct) returns (google.protobuf.Struct);

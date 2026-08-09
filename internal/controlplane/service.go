@@ -50,6 +50,21 @@ func (s *Service) PutTask(ctx context.Context, in *structpb.Struct) (*structpb.S
 	saved, err := s.store.PutTask(ctx, task, task.Metadata.Revision)
 	return encode(saved, mapError(err))
 }
+func (s *Service) DeleteTask(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	id, err := requiredString(in, "id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	expected, err := requiredRevision(in, "revision")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	err = s.store.DeleteTask(ctx, id, expected)
+	if errors.Is(err, storeapi.ErrNotFound) {
+		err = nil
+	}
+	return encode(map[string]any{"deleted": id}, mapError(err))
+}
 func (s *Service) PutNode(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	var node api.Node
 	if err := decode(in, &node); err != nil {
@@ -179,6 +194,16 @@ func requiredString(in *structpb.Struct, key string) (string, error) {
 	}
 	return value, nil
 }
+func requiredRevision(in *structpb.Struct, key string) (int64, error) {
+	if in == nil {
+		return 0, errors.New("request is required")
+	}
+	value, ok := in.AsMap()[key].(float64)
+	if !ok || value <= 0 || value != float64(int64(value)) {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return int64(value), nil
+}
 func invalid(err error) error { return status.Error(codes.InvalidArgument, err.Error()) }
 func nodeCanMutate(principal transport.Principal, nodeID string) bool {
 	return !principal.Roles["node"] || principal.Name == nodeID
@@ -200,6 +225,7 @@ func mapError(err error) error {
 
 type server interface {
 	PutTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	DeleteTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutNode(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	GetTask(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListTasks(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -237,6 +263,9 @@ func unary(method string, call func(server, context.Context, *structpb.Struct) (
 var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*server)(nil), Methods: []grpc.MethodDesc{
 	unary("PutTask", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.PutTask(c, r)
+	}),
+	unary("DeleteTask", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.DeleteTask(c, r)
 	}),
 	unary("PutNode", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.PutNode(c, r)

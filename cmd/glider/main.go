@@ -97,6 +97,20 @@ func run(ctx context.Context, c client, args []string) error {
 			return errors.New("run requires --id and --image")
 		}
 		return printCall(ctx, c, "PutTask", api.Task{Metadata: api.Metadata{ID: *id}, Spec: api.TaskSpec{Image: *image, Command: fs.Args()}, Status: api.TaskStatus{Phase: api.TaskPending}})
+	case "stop":
+		if len(args) != 2 {
+			return errors.New("usage: glider stop TASK")
+		}
+		task, err := c.call(ctx, "GetTask", map[string]any{"id": args[1]})
+		if err != nil {
+			return err
+		}
+		metadata, _ := task["metadata"].(map[string]any)
+		revision, _ := metadata["revision"].(float64)
+		if revision <= 0 {
+			return errors.New("task response has no revision")
+		}
+		return printCall(ctx, c, "DeleteTask", map[string]any{"id": args[1], "revision": revision})
 	case "deploy":
 		if len(args) != 2 {
 			return errors.New("usage: glider deploy FILE.json")
@@ -310,7 +324,7 @@ func env(k, fallback string) string {
 	return fallback
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|deploy|scale|nodes|ps|inspect|logs|exec|stats|events")
+	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|nodes|ps|inspect|logs|exec|stats|events")
 	os.Exit(2)
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "glider:", err); os.Exit(1) }
