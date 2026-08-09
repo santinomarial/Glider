@@ -24,6 +24,8 @@ keeps each established flow pinned. Empty services reject traffic rather than
 forwarding to stale tasks.
 
 Address allocation resolves collisions deterministically under the single
-controller lease. Empty selectors match nothing, invalid task addresses are never published,
+controller lease. A privileged two-node qualification sends a service-VIP TCP
+flow through node-local DNAT and the VXLAN overlay to a backend in a remote pod
+CIDR. Empty selectors match nothing, invalid task addresses are never published,
 assignment generation is retained for stale-state audits, status updates use
 revision compare-and-swap, and restart or eviction clears the old address.

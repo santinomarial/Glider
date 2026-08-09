@@ -40,6 +40,9 @@ func (m *Manager) EnsureOverlay(localTunnel netip.Addr, peers []Peer, mtu int) e
 	if err := validateOverlayPeers(peers); err != nil {
 		return err
 	}
+	if err := validateUnderlayMTU(peers, mtu); err != nil {
+		return err
+	}
 	unlock, err := m.lock()
 	if err != nil {
 		return err
@@ -109,6 +112,27 @@ func (m *Manager) EnsureOverlay(localTunnel netip.Addr, peers []Peer, mtu int) e
 		return err
 	}
 	return durableWrite(filepath.Join(m.root, "overlay-peers.json"), data)
+}
+
+func validateUnderlayMTU(peers []Peer, overlayMTU int) error {
+	const vxlanIPv4Overhead = 50
+	for _, peer := range peers {
+		routes, err := netlink.RouteGet(net.IP(peer.TunnelAddress.AsSlice()))
+		if err != nil {
+			return fmt.Errorf("resolve underlay route for peer %s: %w", peer.NodeID, err)
+		}
+		if len(routes) == 0 || routes[0].LinkIndex == 0 {
+			return fmt.Errorf("resolve underlay route for peer %s: no link route", peer.NodeID)
+		}
+		link, err := netlink.LinkByIndex(routes[0].LinkIndex)
+		if err != nil {
+			return err
+		}
+		if link.Attrs().MTU < overlayMTU+vxlanIPv4Overhead {
+			return fmt.Errorf("overlay MTU %d exceeds peer %s underlay MTU %d minus VXLAN overhead", overlayMTU, peer.NodeID, link.Attrs().MTU)
+		}
+	}
+	return nil
 }
 
 func validateOverlayPeers(peers []Peer) error {
