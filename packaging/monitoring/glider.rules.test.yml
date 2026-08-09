@@ -1,0 +1,31 @@
+rule_files:
+  - glider.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: controller leader loss pages after the hold period
+    interval: 1m
+    input_series:
+      - series: 'glider_controller_leader{instance="cp-a"}'
+        values: '0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: GliderNoControllerLeader
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: No Glider replica owns controller authority
+  - name: unreachable node pages after five minutes
+    interval: 1m
+    input_series:
+      - series: 'glider_nodes{phase="UNREACHABLE"}'
+        values: '1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: GliderNodeUnreachable
+        exp_alerts:
+          - exp_labels:
+              phase: UNREACHABLE
+              severity: critical
+            exp_annotations:
+              summary: One or more Glider nodes are unreachable

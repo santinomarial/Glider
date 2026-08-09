@@ -10,6 +10,7 @@ for archive in "${DIR}"/*.tar.gz; do
 	tar -tzf "${archive}" | grep '/libexec/glider-exec$' >/dev/null
 	tar -tzf "${archive}" | grep '/install.sh$' >/dev/null
 	tar -tzf "${archive}" | grep '/monitoring/glider.rules.yml$' >/dev/null
+	tar -tzf "${archive}" | grep '/monitoring/glider-dashboard.json$' >/dev/null
 	stage="$(mktemp -d)"
 	root="$(mktemp -d)"
 	tar -xzf "${archive}" -C "${stage}"
@@ -19,10 +20,12 @@ for archive in "${DIR}"/*.tar.gz; do
 	test -x "${root}/usr/libexec/glider/glider-exec"
 	test -f "${root}/usr/lib/systemd/system/glider-backup.timer"
 	test -f "${root}/usr/share/glider/monitoring/glider.rules.yml"
+	test -f "${root}/usr/share/glider/monitoring/glider-dashboard.json"
 	test -f "${root}/etc/glider/controlplane.env.example"
 	touch "${root}/etc/glider/operator-owned.conf"
 	"${package}/install.sh" uninstall --root "${root}"
 	test ! -e "${root}/usr/bin/glider-controlplane"
+	test ! -e "${root}/usr/share/glider/monitoring/glider-dashboard.json"
 	test -f "${root}/etc/glider/operator-owned.conf"
 done
 echo "release signatures, checksums, and archive layouts verified"

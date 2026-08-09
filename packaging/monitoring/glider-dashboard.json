@@ -1,0 +1,24 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {"id": 1, "title": "API request rate", "type": "timeseries", "targets": [{"expr": "sum by (method) (rate(glider_api_requests_total[5m]))", "legendFormat": "{{method}}"}]},
+    {"id": 2, "title": "API error rate", "type": "timeseries", "targets": [{"expr": "sum by (code) (rate(glider_api_requests_total{code!=\"OK\"}[5m]))", "legendFormat": "{{code}}"}]},
+    {"id": 3, "title": "API p99 latency", "type": "timeseries", "targets": [{"expr": "histogram_quantile(0.99, sum by (le) (rate(glider_api_request_duration_seconds_bucket[5m])))", "legendFormat": "p99"}]},
+    {"id": 4, "title": "API requests in flight", "type": "timeseries", "targets": [{"expr": "sum(glider_api_requests_in_flight)", "legendFormat": "in flight"}]},
+    {"id": 5, "title": "Controller leader", "type": "stat", "targets": [{"expr": "max(glider_controller_leader)", "legendFormat": "leader present"}]},
+    {"id": 6, "title": "Node phases", "type": "timeseries", "targets": [{"expr": "sum by (phase) (glider_nodes)", "legendFormat": "{{phase}}"}]},
+    {"id": 7, "title": "Task readiness", "type": "timeseries", "targets": [{"expr": "sum by (phase) (glider_tasks)", "legendFormat": "{{phase}}"}]},
+    {"id": 8, "title": "Metrics snapshot failures", "type": "timeseries", "targets": [{"expr": "sum(rate(glider_metrics_snapshot_failures_total[5m]))", "legendFormat": "failures/sec"}]}
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["glider", "control-plane"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "utc",
+  "title": "Glider control plane",
+  "uid": "glider-control-plane",
+  "version": 1
+}

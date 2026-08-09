@@ -1,4 +1,4 @@
-.PHONY: test security vulnerability upgrade-test ha-test fuzz chaos benchmark demo release verify-release
+.PHONY: test security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark demo release verify-release
 
 test:
 	scripts/test-linux-runtime.sh
@@ -20,6 +20,9 @@ fuzz:
 
 chaos:
 	scripts/test-chaos.sh
+
+monitoring:
+	scripts/test-monitoring.sh
 
 benchmark:
 	scripts/benchmark.sh

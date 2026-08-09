@@ -44,6 +44,7 @@ if [ "${ACTION}" = install ]; then
 	install -m 0644 "${SOURCE}/systemd/glider.sysusers" "$(path /usr/lib/sysusers.d/glider.conf)"
 	install -m 0644 "${SOURCE}/systemd/glider.tmpfiles" "$(path /usr/lib/tmpfiles.d/glider.conf)"
 	install -m 0644 "${SOURCE}/monitoring/glider.rules.yml" "$(path /usr/share/glider/monitoring/glider.rules.yml)"
+	install -m 0644 "${SOURCE}/monitoring/glider-dashboard.json" "$(path /usr/share/glider/monitoring/glider-dashboard.json)"
 	for example in "${SOURCE}"/config/*.example; do
 		install -m 0640 "${example}" "$(path /etc/glider/$(basename "${example}"))"
 	done
@@ -59,5 +60,5 @@ for unit in glider-controlplane.service gliderd.service glider-backup.service gl
 	rm -f "$(path /usr/lib/systemd/system/${unit})"
 done
 rm -f "$(path /usr/lib/sysusers.d/glider.conf)" "$(path /usr/lib/tmpfiles.d/glider.conf)"
-rm -f "$(path /usr/share/glider/monitoring/glider.rules.yml)"
+rm -f "$(path /usr/share/glider/monitoring/glider.rules.yml)" "$(path /usr/share/glider/monitoring/glider-dashboard.json)"
 echo "Glider executables and units removed; configuration, keys, backups, and runtime data were preserved."

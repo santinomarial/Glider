@@ -24,11 +24,14 @@ import (
 	imagemanager "github.com/santinomarial/glider/internal/image/manager"
 	"github.com/santinomarial/glider/internal/lease"
 	"github.com/santinomarial/glider/internal/nodeops"
+	"github.com/santinomarial/glider/internal/observability"
 	storeapi "github.com/santinomarial/glider/internal/store"
 	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
 )
+
+var daemonLog = observability.NewLogger(os.Stderr, "gliderd")
 
 func main() {
 	var endpoints string
@@ -78,7 +81,7 @@ func main() {
 		return
 	}
 	if nodeID == "" {
-		fmt.Fprintln(os.Stderr, "gliderd: --node-id is required")
+		daemonLog.Error("node ID is required", nil)
 		os.Exit(2)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -91,7 +94,7 @@ func main() {
 			fatal(err)
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "gliderd: WARNING: etcd TLS disabled")
+		daemonLog.Warn("etcd TLS disabled", map[string]any{"insecure": true})
 	}
 	client, err := clientv3.New(etcdConfig)
 	if err != nil {
@@ -148,7 +151,7 @@ func main() {
 				fatal(err)
 			}
 		}()
-		fmt.Fprintf(os.Stderr, "gliderd: node operations listening on %s\n", listener.Addr())
+		daemonLog.Info("node operations listening", map[string]any{"address": listener.Addr().String(), "node_id": nodeID})
 	}
 	reconciler, err := agent.New(filepath.Join(dataRoot, "agent", "assignments"), driver)
 	if err != nil {
@@ -203,16 +206,16 @@ func monitorStorage(ctx context.Context, nodeID string, store storageStore, driv
 	defer ticker.Stop()
 	for {
 		if result, err := driver.CollectImages(ctx); err != nil && ctx.Err() == nil {
-			fmt.Fprintf(os.Stderr, "gliderd: image collection failed: %v\n", err)
+			daemonLog.Error("image collection failed", map[string]any{"error": err.Error(), "node_id": nodeID})
 		} else if result.BytesReclaimed > 0 {
-			fmt.Fprintf(os.Stderr, "gliderd: image collection reclaimed %d bytes (%d blobs, %d layers)\n", result.BytesReclaimed, result.BlobsRemoved, result.LayersRemoved)
+			daemonLog.Info("image collection reclaimed storage", map[string]any{"bytes": result.BytesReclaimed, "blobs": result.BlobsRemoved, "layers": result.LayersRemoved, "node_id": nodeID})
 		}
 		total, available, pressured, err := driver.DiskUsage()
 		if err != nil && ctx.Err() == nil {
-			fmt.Fprintf(os.Stderr, "gliderd: storage pressure check failed: %v\n", err)
+			daemonLog.Error("storage pressure check failed", map[string]any{"error": err.Error(), "node_id": nodeID})
 		} else if pressured {
 			if err := evacuateDiskPressure(ctx, nodeID, store, total, available); err != nil && ctx.Err() == nil {
-				fmt.Fprintf(os.Stderr, "gliderd: storage-pressure evacuation failed: %v\n", err)
+				daemonLog.Error("storage-pressure evacuation failed", map[string]any{"error": err.Error(), "node_id": nodeID})
 			}
 		}
 		select {
@@ -270,7 +273,10 @@ func split(value string) []string {
 	}
 	return out
 }
-func fatal(err error) { fmt.Fprintln(os.Stderr, "gliderd:", err); os.Exit(1) }
+func fatal(err error) {
+	daemonLog.Error("fatal process error", map[string]any{"error": err.Error()})
+	os.Exit(1)
+}
 
 type nodeLister interface {
 	ListNodes(context.Context) ([]api.Node, error)

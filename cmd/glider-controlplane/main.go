@@ -33,6 +33,8 @@ import (
 	"github.com/santinomarial/glider/internal/version"
 )
 
+var controlLog = observability.NewLogger(os.Stderr, "glider-controlplane")
+
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8443", "gRPC listen address")
 	endpoints := flag.String("etcd-endpoints", "127.0.0.1:2379", "comma-separated etcd endpoints")
@@ -79,7 +81,7 @@ func main() {
 			fatal(err)
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "glider-controlplane: WARNING: etcd TLS disabled")
+		controlLog.Warn("etcd TLS disabled", map[string]any{"insecure": true})
 	}
 	client, err := clientv3.New(etcdConfig)
 	if err != nil {
@@ -111,7 +113,7 @@ func main() {
 	rpcMetrics := observability.NewRPCMetrics(os.Stderr)
 	var serverOptions []grpc.ServerOption
 	if *insecureDevelopment {
-		fmt.Fprintln(os.Stderr, "glider-controlplane: WARNING: TLS and authorization disabled")
+		controlLog.Warn("TLS and authorization disabled", map[string]any{"insecure": true})
 		serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(rpcMetrics.UnaryInterceptor()))
 	} else {
 		if *tlsCert == "" || *tlsKey == "" || *clientCA == "" {
@@ -173,7 +175,7 @@ func main() {
 				fatal(err)
 			}
 		}()
-		fmt.Fprintf(os.Stderr, "glider-controlplane: cluster DNS listening on %s/udp\n", *dnsListen)
+		controlLog.Info("cluster DNS listening", map[string]any{"address": *dnsListen, "protocol": "udp"})
 	}
 	if *instanceID == "" {
 		*instanceID = uuid.NewString()
@@ -183,7 +185,7 @@ func main() {
 		err := leadership.Run(ctx, client, electionPrefix, *instanceID, func(leaderCtx context.Context) error {
 			rpcMetrics.SetLeader(true)
 			defer rpcMetrics.SetLeader(false)
-			fmt.Fprintf(os.Stderr, "glider-controlplane: replica %s acquired controller leadership\n", *instanceID)
+			controlLog.Info("controller leadership acquired", map[string]any{"instance_id": *instanceID})
 			return runLeaderControllers(leaderCtx, client, *clusterID, store, workloads, services, schedulerController, *eventRetention, *eventRetentionMax, *eventPruneInterval)
 		})
 		if err != nil && ctx.Err() == nil {
@@ -191,7 +193,7 @@ func main() {
 		}
 	}()
 	go func() { <-ctx.Done(); server.GracefulStop() }()
-	fmt.Fprintf(os.Stderr, "glider-controlplane: listening on %s\n", listener.Addr())
+	controlLog.Info("API listening", map[string]any{"address": listener.Addr().String(), "instance_id": *instanceID})
 	if err := server.Serve(listener); err != nil && ctx.Err() == nil {
 		fatal(err)
 	}
@@ -212,9 +214,9 @@ func pruneEvents(ctx context.Context, store *etcdstore.Store, retention time.Dur
 	defer ticker.Stop()
 	for {
 		if removed, err := store.PruneEvents(ctx, time.Now().UTC().Add(-retention), maximum); err != nil && ctx.Err() == nil && !errors.Is(err, storeapi.ErrConflict) {
-			fmt.Fprintf(os.Stderr, "glider-controlplane: event retention failed: %v\n", err)
+			controlLog.Error("event retention failed", map[string]any{"error": err.Error()})
 		} else if removed > 0 {
-			fmt.Fprintf(os.Stderr, "glider-controlplane: pruned %d expired events\n", removed)
+			controlLog.Info("expired events pruned", map[string]any{"removed": removed})
 		}
 		select {
 		case <-ctx.Done():
@@ -232,7 +234,10 @@ func split(value string) []string {
 	}
 	return out
 }
-func fatal(err error) { fmt.Fprintln(os.Stderr, "glider-controlplane:", err); os.Exit(1) }
+func fatal(err error) {
+	controlLog.Error("fatal process error", map[string]any{"error": err.Error()})
+	os.Exit(1)
+}
 
 type taskLister interface {
 	ListTasks(context.Context) ([]api.Task, error)

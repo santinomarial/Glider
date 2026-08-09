@@ -34,7 +34,7 @@ for arch in amd64 arm64; do
 	done
 	cp packaging/systemd/* "${stage}/systemd/"
 	cp packaging/config/* "${stage}/config/"
-	cp packaging/monitoring/* "${stage}/monitoring/"
+	cp packaging/monitoring/glider.rules.yml packaging/monitoring/glider-dashboard.json "${stage}/monitoring/"
 	cp packaging/install.sh "${stage}/install.sh"
 	chmod 0755 "${stage}/install.sh"
 	cp VERSION README.md "${stage}/"
