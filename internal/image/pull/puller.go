@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -35,13 +36,22 @@ type Result struct {
 type Puller struct {
 	registry *registry.Client
 	store    *content.Store
+	os       string
+	arch     string
+	variant  string
 }
 
 func New(registryClient *registry.Client, store *content.Store) (*Puller, error) {
+	return NewForPlatform(registryClient, store, runtime.GOOS, runtime.GOARCH, "")
+}
+func NewForPlatform(registryClient *registry.Client, store *content.Store, operatingSystem, architecture, variant string) (*Puller, error) {
 	if registryClient == nil || store == nil {
 		return nil, errors.New("puller requires registry client and content store")
 	}
-	return &Puller{registry: registryClient, store: store}, nil
+	if operatingSystem != "linux" || (architecture != "amd64" && architecture != "arm64") {
+		return nil, errors.New("puller supports linux/amd64 and linux/arm64 only")
+	}
+	return &Puller{registry: registryClient, store: store, os: operatingSystem, arch: architecture, variant: variant}, nil
 }
 
 // Pull resolves input, selects linux/amd64 from an index when necessary, and
@@ -65,13 +75,13 @@ func (p *Puller) Pull(ctx context.Context, input string) (Result, error) {
 		if err := json.Unmarshal(data, &index); err != nil {
 			return Result{}, fmt.Errorf("%w: decode index: %v", ErrInvalidManifest, err)
 		}
-		chosen, ok := selectLinuxAMD64(index.Manifests)
+		chosen, ok := selectPlatform(index.Manifests, p.os, p.arch, p.variant)
 		if !ok {
 			return Result{}, ErrNoPlatform
 		}
 		data, desc, err = p.registry.FetchManifest(ctx, ref, chosen.Digest.String())
 		if err != nil {
-			return Result{}, fmt.Errorf("fetch linux/amd64 manifest: %w", err)
+			return Result{}, fmt.Errorf("fetch %s/%s manifest: %w", p.os, p.arch, err)
 		}
 		if desc.Digest != chosen.Digest || desc.Size != chosen.Size {
 			return Result{}, fmt.Errorf("%w: selected manifest descriptor mismatch", ErrInvalidManifest)
@@ -108,11 +118,11 @@ func (p *Puller) Pull(ctx context.Context, input string) (Result, error) {
 	if err := json.Unmarshal(configData, &image); err != nil {
 		return Result{}, fmt.Errorf("decode image config: %w", err)
 	}
-	if image.OS != "" && image.OS != "linux" {
-		return Result{}, fmt.Errorf("image config OS %q is not linux", image.OS)
+	if image.OS != "" && image.OS != p.os {
+		return Result{}, fmt.Errorf("image config OS %q does not match %s", image.OS, p.os)
 	}
-	if image.Architecture != "" && image.Architecture != "amd64" {
-		return Result{}, fmt.Errorf("image config architecture %q is not amd64", image.Architecture)
+	if image.Architecture != "" && image.Architecture != p.arch {
+		return Result{}, fmt.Errorf("image config architecture %q does not match %s", image.Architecture, p.arch)
 	}
 	return Result{Reference: ref, Manifest: desc, Config: manifest.Config, Layers: append([]v1.Descriptor(nil), manifest.Layers...), Image: image}, nil
 }
@@ -171,9 +181,9 @@ func validateManifest(m v1.Manifest) error {
 	return nil
 }
 
-func selectLinuxAMD64(manifests []v1.Descriptor) (v1.Descriptor, bool) {
+func selectPlatform(manifests []v1.Descriptor, operatingSystem, architecture, variant string) (v1.Descriptor, bool) {
 	for _, desc := range manifests {
-		if desc.Platform != nil && desc.Platform.OS == "linux" && desc.Platform.Architecture == "amd64" && desc.Platform.Variant == "" {
+		if desc.Platform != nil && desc.Platform.OS == operatingSystem && desc.Platform.Architecture == architecture && (variant == "" || desc.Platform.Variant == variant) {
 			return desc, true
 		}
 	}

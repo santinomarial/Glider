@@ -50,7 +50,7 @@ func TestPullOCIManifestStoresConfigAndLayers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	puller, _ := New(registry.NewClient(server.Client(), nil, true), store)
+	puller, _ := NewForPlatform(registry.NewClient(server.Client(), nil, true), store, "linux", "amd64", "")
 	input := strings.TrimPrefix(server.URL, "http://") + "/team/app:v1"
 	result, err := puller.Pull(context.Background(), input)
 	if err != nil {
@@ -105,13 +105,23 @@ func TestPullSelectsLinuxAMD64FromIndex(t *testing.T) {
 	}))
 	defer server.Close()
 	store, _ := content.NewStore(t.TempDir())
-	puller, _ := New(registry.NewClient(server.Client(), nil, true), store)
+	puller, _ := NewForPlatform(registry.NewClient(server.Client(), nil, true), store, "linux", "amd64", "")
 	result, err := puller.Pull(context.Background(), strings.TrimPrefix(server.URL, "http://")+"/repo/app")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Manifest.Digest != manifestDesc.Digest {
 		t.Fatalf("selected %s, want %s", result.Manifest.Digest, manifestDesc.Digest)
+	}
+}
+func TestSelectPlatformSupportsArm64Variant(t *testing.T) {
+	values := []v1.Descriptor{{Platform: &v1.Platform{OS: "linux", Architecture: "amd64"}}, {Platform: &v1.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"}}}
+	selected, ok := selectPlatform(values, "linux", "arm64", "")
+	if !ok || selected.Platform.Architecture != "arm64" {
+		t.Fatalf("selected=%+v ok=%v", selected.Platform, ok)
+	}
+	if _, ok := selectPlatform(values, "linux", "s390x", ""); ok {
+		t.Fatal("selected unsupported platform")
 	}
 }
 
