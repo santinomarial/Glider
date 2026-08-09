@@ -32,6 +32,8 @@ func main() {
 		err = runVerify(os.Args[2:])
 	case "restore":
 		err = runRestore(os.Args[2:])
+	case "pki":
+		err = runPKI(os.Args[2:])
 	default:
 		err = errors.New("unknown command")
 	}
