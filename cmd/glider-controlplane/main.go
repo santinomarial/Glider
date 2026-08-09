@@ -87,7 +87,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	if err := store.ConfigureQuota(ctx, etcdstore.QuotaLimits{Tasks: *quotaTasks, Workloads: *quotaWorkloads, Services: *quotaServices, Resources: api.Resources{CPUMilli: *quotaCPUMilli, MemoryBytes: *quotaMemoryBytes}}); err != nil {
+	if _, err := store.EnsureSchema(ctx, etcdstore.QuotaLimits{Tasks: *quotaTasks, Workloads: *quotaWorkloads, Services: *quotaServices, Resources: api.Resources{CPUMilli: *quotaCPUMilli, MemoryBytes: *quotaMemoryBytes}}); err != nil {
 		fatal(err)
 	}
 	if *secretKeyFile == "" {

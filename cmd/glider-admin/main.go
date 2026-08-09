@@ -7,7 +7,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/backup"
+	etcdstore "github.com/santinomarial/glider/internal/store/etcd"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -20,7 +22,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key"))
+		fatal(errors.New("usage: glider-admin backup|verify|restore|pki|secret-key|schema"))
 	}
 	var err error
 	switch os.Args[1] {
@@ -37,12 +39,69 @@ func main() {
 		err = runPKI(os.Args[2:])
 	case "secret-key":
 		err = runSecretKey(os.Args[2:])
+	case "schema":
+		err = runSchema(os.Args[2:])
 	default:
 		err = errors.New("unknown command")
 	}
 	if err != nil {
 		fatal(err)
 	}
+}
+
+func runSchema(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: glider-admin schema status|migrate|downgrade")
+	}
+	fs := flag.NewFlagSet("schema "+args[0], flag.ContinueOnError)
+	endpoint := fs.String("endpoint", "", "etcd endpoint")
+	clusterID := fs.String("cluster-id", "", "Glider cluster ID")
+	target := fs.Int("target", 1, "downgrade target schema")
+	quotaTasks := fs.Int64("quota-tasks", 10000, "maximum cluster tasks")
+	quotaWorkloads := fs.Int64("quota-workloads", 1000, "maximum cluster workloads")
+	quotaServices := fs.Int64("quota-services", 1000, "maximum cluster services")
+	quotaCPU := fs.Int64("quota-cpu-milli", 1000000, "maximum aggregate requested CPU")
+	quotaMemory := fs.Int64("quota-memory-bytes", 1<<50, "maximum aggregate requested memory")
+	tls := addTLS(fs)
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *endpoint == "" || *clusterID == "" {
+		return errors.New("--endpoint and --cluster-id are required")
+	}
+	config, err := tls.config(*endpoint)
+	if err != nil {
+		return err
+	}
+	client, err := clientv3.New(config)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	store, err := etcdstore.New(client, *clusterID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	var state etcdstore.SchemaState
+	switch args[0] {
+	case "status":
+		state, err = store.SchemaStatus(ctx)
+	case "migrate":
+		limits := etcdstore.QuotaLimits{Tasks: *quotaTasks, Workloads: *quotaWorkloads, Services: *quotaServices, Resources: api.Resources{CPUMilli: *quotaCPU, MemoryBytes: *quotaMemory}}
+		state, err = store.EnsureSchema(ctx, limits)
+	case "downgrade":
+		state, err = store.DowngradeSchema(ctx, *target)
+	default:
+		return errors.New("schema command must be status, migrate, or downgrade")
+	}
+	if err != nil {
+		return err
+	}
+	data, _ := json.MarshalIndent(state, "", "  ")
+	fmt.Println(string(data))
+	return nil
 }
 
 func runSecretKey(args []string) error {

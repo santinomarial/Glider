@@ -14,7 +14,7 @@ Passing unit tests alone does not close a row.
 | Secret handling | P0 | Encrypted objects, redaction, node/generation-fenced delivery, ephemeral injection, audited access, and rotation/reassignment mTLS test exist | Release-candidate key-loss and corrupt-ciphertext recovery exercise |
 | Control-plane HA | P0 | One process is demonstrated | Three-member etcd and multiple API/controller instances pass leader/failover tests without duplicate authority |
 | Backup and disaster recovery | P0 | None | Automated etcd snapshot, verified restore, recovery-point/runbook test, and corrupt-backup rejection |
-| Upgrades and schema migration | P0 | No compatibility or migration machinery | Version-skew policy, forward/backward migration, canary upgrade, and rollback test |
+| Upgrades and schema migration | P0 | Persisted compatibility bounds, mutexed crash-resumable v1→v2 migration, guarded v2→v1 rollback, and concurrent migration test exist | Packaged-binary canary upgrade and rollback qualification |
 | Node lifecycle | P0 | Lease fencing, cordon/drain, revision-safe task deletion, and finalizer-style workload deletion exist | Authenticated join, safe node removal, automated certificate renewal, and replacement tests |
 | Storage and disk pressure | P0 | Reference-safe image GC, periodic reclamation, and launch admission thresholds implemented | Workload eviction policy and real disk-exhaustion recovery qualification |
 | Network policy and exposure | P0 | Overlay/NAT/service DNS exist | Ingress/egress policy, service data plane, firewall persistence, MTU validation, and multi-node tests |
