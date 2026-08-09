@@ -197,6 +197,24 @@ func run(ctx context.Context, c client, args []string) error {
 			}
 		}
 		return errors.New("node not found")
+	case "remove-node":
+		if len(args) != 2 {
+			return errors.New("usage: glider remove-node NODE")
+		}
+		result, err := c.call(ctx, "ListNodes", map[string]any{})
+		if err != nil {
+			return err
+		}
+		var nodes []api.Node
+		if err := items(result, &nodes); err != nil {
+			return err
+		}
+		for _, node := range nodes {
+			if node.Metadata.ID == args[1] || node.Metadata.Name == args[1] {
+				return printCall(ctx, c, "RemoveNode", map[string]any{"id": node.Metadata.ID, "revision": node.Metadata.Revision})
+			}
+		}
+		return errors.New("node not found")
 	case "ps":
 		return list(ctx, c, "ListTasks")
 	case "events":
@@ -431,7 +449,7 @@ func newIdempotencyKey() string {
 	return hex.EncodeToString(value[:])
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|delete|nodes|drain|ps|inspect|logs|exec|stats|events|secret")
+	fmt.Fprintln(os.Stderr, "usage: glider [global flags] run|stop|deploy|scale|delete|nodes|drain|remove-node|ps|inspect|logs|exec|stats|events|secret")
 	os.Exit(2)
 }
 func fatal(err error) { fmt.Fprintln(os.Stderr, "glider:", err); os.Exit(1) }

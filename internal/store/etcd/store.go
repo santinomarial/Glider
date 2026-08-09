@@ -56,6 +56,53 @@ func (s *Store) PutNode(ctx context.Context, n api.Node, expectedRevision int64)
 	n.Metadata.Revision = 0
 	return putResource(ctx, s.client, s.key("nodes", n.Metadata.ID), n, expectedRevision)
 }
+
+// RemoveNode deletes only a stopped, drained node with no remaining ownership.
+// The absent lease comparison prevents removal racing a live node process.
+func (s *Store) RemoveNode(ctx context.Context, id string, expectedRevision int64) error {
+	if !validID(id) || expectedRevision <= 0 {
+		return errors.New("valid node ID and revision are required")
+	}
+	node, err := s.GetNode(ctx, id)
+	if err != nil {
+		return err
+	}
+	if node.Metadata.Revision != expectedRevision {
+		return storeapi.ErrConflict
+	}
+	if !node.Spec.Unschedulable || (node.Status.Phase != api.NodeDraining && node.Status.Phase != api.NodeUnreachable) || node.Status.Reserved.CPUMilli != 0 || node.Status.Reserved.MemoryBytes != 0 {
+		return storeapi.ErrNodeActive
+	}
+	assignments, err := s.ListAssignments(ctx)
+	if err != nil {
+		return err
+	}
+	for _, assignment := range assignments {
+		if assignment.NodeID == id {
+			return storeapi.ErrNodeActive
+		}
+	}
+	nodeKey := s.key("nodes", id)
+	leaseKey := s.key("leases/nodes", id)
+	response, err := s.client.Txn(ctx).If(
+		clientv3.Compare(clientv3.ModRevision(nodeKey), "=", expectedRevision),
+		clientv3.Compare(clientv3.CreateRevision(leaseKey), "=", 0),
+	).Then(clientv3.OpDelete(nodeKey)).Commit()
+	if err != nil {
+		return err
+	}
+	if response.Succeeded {
+		return nil
+	}
+	lease, getErr := s.client.Get(ctx, leaseKey)
+	if getErr != nil {
+		return getErr
+	}
+	if len(lease.Kvs) > 0 {
+		return storeapi.ErrNodeActive
+	}
+	return storeapi.ErrConflict
+}
 func (s *Store) PutWorkload(ctx context.Context, w api.Workload, expectedRevision int64) (api.Workload, error) {
 	if !validID(w.Metadata.ID) {
 		return w, errors.New("invalid workload ID")

@@ -15,6 +15,7 @@ var (
 	ErrAlreadyAssigned      = errors.New("task already assigned")
 	ErrInsufficientCapacity = errors.New("node reservation no longer fits")
 	ErrQuotaExceeded        = errors.New("cluster quota exceeded")
+	ErrNodeActive           = errors.New("node is active or not safely drained")
 )
 
 type BindRequest struct {

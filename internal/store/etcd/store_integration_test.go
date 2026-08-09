@@ -260,6 +260,41 @@ func TestEvictUnreachableNodeRequeuesWithNewGeneration(t *testing.T) {
 	}
 }
 
+func TestRemoveNodeRequiresDrainAndAbsentLease(t *testing.T) {
+	client := startEtcd(t)
+	store, _ := New(client, "remove-node-cluster")
+	ctx := context.Background()
+	node, err := store.PutNode(ctx, readyNode("node-a"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.RemoveNode(ctx, "node-a", node.Metadata.Revision); !errors.Is(err, storeapi.ErrNodeActive) {
+		t.Fatalf("ready node removal error = %v", err)
+	}
+	node.Spec.Unschedulable = true
+	node.Status.Phase = api.NodeDraining
+	node, err = store.PutNode(ctx, node, node.Metadata.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaseKey := store.key("leases/nodes", "node-a")
+	if _, err = client.Put(ctx, leaseKey, "live-owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.RemoveNode(ctx, "node-a", node.Metadata.Revision); !errors.Is(err, storeapi.ErrNodeActive) {
+		t.Fatalf("live node removal error = %v", err)
+	}
+	if _, err = client.Delete(ctx, leaseKey); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.RemoveNode(ctx, "node-a", node.Metadata.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.GetNode(ctx, "node-a"); !errors.Is(err, storeapi.ErrNotFound) {
+		t.Fatalf("removed node still exists: %v", err)
+	}
+}
+
 func readyNode(id string) api.Node {
 	return api.Node{Metadata: api.Metadata{ID: id}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}}
 }

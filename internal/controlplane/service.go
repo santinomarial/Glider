@@ -145,6 +145,20 @@ func (s *Service) DrainNode(ctx context.Context, in *structpb.Struct) (*structpb
 	}
 	return encode(saved, nil)
 }
+func (s *Service) RemoveNode(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
+	id, err := requiredString(in, "id")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	expected, err := requiredRevision(in, "revision")
+	if err != nil {
+		return nil, invalid(err)
+	}
+	if err := s.store.RemoveNode(ctx, id, expected); err != nil {
+		return nil, mapError(err)
+	}
+	return encode(map[string]any{"removed": id}, nil)
+}
 func (s *Service) ListAssignments(ctx context.Context, _ *structpb.Struct) (*structpb.Struct, error) {
 	values, err := s.store.ListAssignments(ctx)
 	return encode(map[string]any{"items": values}, mapError(err))
@@ -466,6 +480,8 @@ func mapError(err error) error {
 		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, storeapi.ErrInsufficientCapacity), errors.Is(err, storeapi.ErrQuotaExceeded), errors.Is(err, scheduler.ErrUnschedulable):
 		return status.Error(codes.ResourceExhausted, err.Error())
+	case errors.Is(err, storeapi.ErrNodeActive):
+		return status.Error(codes.FailedPrecondition, err.Error())
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}
@@ -479,6 +495,7 @@ type server interface {
 	ListTasks(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListNodes(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	DrainNode(context.Context, *structpb.Struct) (*structpb.Struct, error)
+	RemoveNode(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	ListAssignments(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	PutWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
 	DeleteWorkload(context.Context, *structpb.Struct) (*structpb.Struct, error)
@@ -536,6 +553,9 @@ var description = grpc.ServiceDesc{ServiceName: ServiceName, HandlerType: (*serv
 	}),
 	unary("DrainNode", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.DrainNode(c, r)
+	}),
+	unary("RemoveNode", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
+		return s.RemoveNode(c, r)
 	}),
 	unary("ListAssignments", func(s server, c context.Context, r *structpb.Struct) (*structpb.Struct, error) {
 		return s.ListAssignments(c, r)
