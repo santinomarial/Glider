@@ -37,3 +37,11 @@ schema marker, the next attempt verifies that ledger and completes the marker.
 
 Never run v1 and v2 writers concurrently. A mixed read-only observation window
 is permitted by the reader compatibility bound; mixed writers are not.
+
+`make upgrade-test` is the release qualification for this procedure. It builds
+the signed current release archives, extracts the native packaged binaries,
+builds the pinned last pre-schema writer (`4341694`), and starts a mutually
+authenticated TLS etcd cluster. The test migrates to v2, performs a create and
+delete through the packaged current control plane, stops it, downgrades to v1,
+then performs the same canary lifecycle through the legacy binary. Any binary
+startup, schema bound, API mutation, or rollback failure fails the gate.
