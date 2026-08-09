@@ -68,6 +68,43 @@ func TestPackagedReplicasServeThroughControllerLeaderDeath(t *testing.T) {
 	deleteTask(t, survivor.address, saved)
 }
 
+func TestPackagedReplicasSurviveControllerCrashStorm(t *testing.T) {
+	binary := os.Getenv("GLIDER_HA_CONTROLPLANE")
+	if binary == "" {
+		t.Skip("GLIDER_HA_CONTROLPLANE is required for packaged HA qualification")
+	}
+	files := createPKI(t)
+	endpoint, client, stopEtcd := startEtcd(t, files)
+	defer stopEtcd()
+	replicas := map[string]*replica{}
+	for _, identity := range []string{"storm-a", "storm-b", "storm-c"} {
+		replicas[identity] = startReplica(t, binary, identity, endpoint, files)
+	}
+	defer func() {
+		for _, running := range replicas {
+			running.stop()
+		}
+	}()
+	putTask(t, replicas["storm-a"].address, "storm-canary")
+
+	previous := ""
+	for round := 0; round < 5; round++ {
+		leader := awaitLeader(t, client, previous)
+		failed := replicas[leader]
+		failed.stop()
+		started := time.Now()
+		next := awaitLeader(t, client, leader)
+		if elapsed := time.Since(started); elapsed > 12*time.Second {
+			t.Fatalf("round %d failover SLO exceeded: %s", round+1, elapsed)
+		}
+		if task := getTask(t, replicas[next].address, "storm-canary"); task.Metadata.ID != "storm-canary" {
+			t.Fatalf("round %d lost durable API state: %+v", round+1, task)
+		}
+		replicas[leader] = startReplica(t, binary, leader, endpoint, files)
+		previous = leader
+	}
+}
+
 type tlsFiles struct{ ca, serverCert, serverKey, clientCert, clientKey, secretKey string }
 
 func createPKI(t *testing.T) tlsFiles {

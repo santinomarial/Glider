@@ -45,10 +45,10 @@ func (m *Manager) Run(ctx context.Context, fence func(context.Context) error) er
 		return err
 	}
 	if !acquired.Succeeded {
-		_, _ = m.client.Revoke(context.Background(), grant.ID)
+		revoke(m.client, grant.ID)
 		return ErrNodeOwned
 	}
-	defer m.client.Revoke(context.Background(), grant.ID)
+	defer revoke(m.client, grant.ID)
 	interval := time.Duration(m.ttl) * time.Second / 3
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -76,6 +76,13 @@ func (m *Manager) Run(ctx context.Context, fence func(context.Context) error) er
 		}
 	}
 }
+
+func revoke(client *clientv3.Client, id clientv3.LeaseID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, _ = client.Revoke(ctx, id)
+}
+
 func NodeAlive(ctx context.Context, client *clientv3.Client, clusterID, nodeID string) (bool, error) {
 	resp, err := client.Get(ctx, path.Join("/glider/v1/clusters", clusterID, "leases/nodes", nodeID))
 	return err == nil && len(resp.Kvs) == 1, err

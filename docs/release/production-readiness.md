@@ -21,13 +21,13 @@ Passing unit tests alone does not close a row.
 | Observability | P0 | Resource metrics, durable bounded events, correlated JSON daemon/API logs, request latency/error/saturation histograms, leadership/snapshot signals, a packaged Grafana dashboard, and executable alert fire-drill tests exist | Release-environment scrape, notification-routing, and on-call delivery fire drill |
 | Packaging and host integration | P0 | Reproducible signed static binaries, hardened units, sysusers/tmpfiles, installer/uninstaller tests, and non-executing fail-closed config/TLS preflight exist | Packaged canary upgrade qualification |
 | Release security | P0 | Isolation gate, pinned official reachable-code vulnerability scan, response SLAs, SPDX 2.3 SBOM, in-toto SLSA v1 provenance, checksums, signatures, and tamper-negative verification exist | Independent threat-model review |
-| Reliability qualification | P0 | Unit/race/runtime and limited chaos gates | Real multi-node soak, partitions, control-plane loss, etcd member loss, disk pressure, crash storm, and recovery SLO gates |
+| Reliability qualification | P0 | Unit/race/runtime, real kernel-network and disk-pressure tests, lease-partition self-fencing SLO, packaged controller crash storm, packaged control-plane loss, three-member etcd leader loss, encrypted recovery, and a consolidated evidence-producing gate exist | Release-environment multi-host soak and fault qualification |
 | Performance qualification | P1 | Microbenchmarks only | Published target hardware, capacity envelope, saturation behavior, p95/p99 SLOs, and regression thresholds |
 | Operator documentation | P1 | Design documents exist | Installation, hardening, sizing, monitoring, backup, restore, upgrade, rollback, incident, and decommission runbooks |
 
 ## Release rule
 
-The production release workflow must generate an evidence bundle containing
+`make production-gate` generates an evidence bundle containing
 the exact source commit, test outputs, benchmark results, SBOM, signatures,
 compatibility matrix, migration result, and disaster-recovery result. The
 workflow fails closed if a P0 gate is missing, skipped, flaky, or relies only

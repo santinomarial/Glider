@@ -36,7 +36,58 @@ func TestExclusiveNodeLease(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestControlPlanePartitionSelfFencesWithinDeadline(t *testing.T) {
+	client, stop := startEtcdWithStop(t)
+	manager, err := New(client, "cluster", "partitioned-node", "owner", time.Second, 2500*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fenced := make(chan time.Time, 1)
+	done := make(chan error, 1)
+	started := time.Now()
+	go func() {
+		done <- manager.Run(context.Background(), func(context.Context) error {
+			fenced <- time.Now()
+			return nil
+		})
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		alive, checkErr := NodeAlive(context.Background(), client, "cluster", "partitioned-node")
+		if checkErr == nil && alive {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("lease was not acquired before partition")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	partitionedAt := time.Now()
+	stop()
+	select {
+	case at := <-fenced:
+		elapsed := at.Sub(partitionedAt)
+		if elapsed > 4*time.Second {
+			t.Fatalf("self-fencing SLO exceeded: %s", elapsed)
+		}
+		if at.Before(started) {
+			t.Fatal("invalid fencing timestamp")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("partitioned node did not self-fence")
+	}
+	if err := <-done; err == nil {
+		t.Fatal("lease manager returned success after partition")
+	}
+}
+
 func startEtcd(t *testing.T) *clientv3.Client {
+	client, _ := startEtcdWithStop(t)
+	return client
+}
+
+func startEtcdWithStop(t *testing.T) (*clientv3.Client, func()) {
 	t.Helper()
 	cfg := embed.NewConfig()
 	cfg.Dir = t.TempDir()
@@ -52,7 +103,6 @@ func startEtcd(t *testing.T) *clientv3.Client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	select {
 	case <-server.Server.ReadyNotify():
 	case <-time.After(10 * time.Second):
@@ -62,8 +112,16 @@ func startEtcd(t *testing.T) *clientv3.Client {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { client.Close() })
-	return client
+	var stopped bool
+	stop := func() {
+		if stopped {
+			return
+		}
+		stopped = true
+		server.Close()
+	}
+	t.Cleanup(func() { client.Close(); stop() })
+	return client, stop
 }
 func freeURL(t *testing.T) url.URL {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
