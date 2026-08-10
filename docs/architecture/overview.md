@@ -1,9 +1,15 @@
 # Glider architecture overview
 
-Status: living document, Phase 0.
+Status: living architecture contract.
 Related: [container-lifecycle.md](../design/container-lifecycle.md),
 [runtime.md](../design/runtime.md), [failure-model.md](../design/failure-model.md),
 [security-model.md](../design/security-model.md).
+
+For rendered structural and dynamic diagrams, use the
+[architecture map](README.md): system context, deployable containers,
+production deployment, and runtime/reconciliation flows. This page remains the
+authoritative explanation of design principles, identifiers, and state-machine
+semantics.
 
 ## 1. What Glider is
 

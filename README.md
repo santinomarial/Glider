@@ -8,67 +8,80 @@ layer unpacker, snapshotter), its own single- and multi-node networking
 (etcd-backed desired state, scheduler, node leases, fencing) — rather than
 wrapping Docker, containerd, or Kubernetes.
 
-Status: **v0.1.0 master-plan milestone complete; production hardening in progress**. Glider now
-adds bridge/veth networking, persistent IPAM, DNS, NAT and host-port
-publication; a restart-safe `gliderd` reconciliation loop; an etcd-backed
-versioned gRPC control plane; and a resource-aware scheduler whose assignment
-and reservation commit atomically; renewable node leases and self-fencing;
-VXLAN node-subnet networking; replica reconciliation and node-failure
-replacement; and distinct startup, liveness, and readiness semantics with
-bounded restart backoff. Workload template revisions roll forward under durable
-`maxSurge`/`maxUnavailable` budgets, and stalled replacements preserve healthy
-old capacity. Services select labeled tasks, publish only Ready container
-addresses, and resolve through stable `<service>.glider` DNS names. This builds on Phase 8's secured OCI image
-execution, Phase 4's cgroup v2 limits, and Phase 2's PID 1
-supervision/crash recovery, and Phase 1's Linux namespace runtime. (Phase 3's originally
-planned mount-isolation/`pivot_root` scope was completed early, inside
-Phase 1's exit contract — see [docs/design/cgroups.md](docs/design/cgroups.md)'s
-"Note on phase numbering".) See
-[docs/architecture/overview.md](docs/architecture/overview.md) for the
-end-to-end design and the phase plan,
-[docs/adr/0006-glider-init-pid1-supervisor.md](docs/adr/0006-glider-init-pid1-supervisor.md)
-for the runtime's process architecture, and
-[docs/design/cgroups.md](docs/design/cgroups.md) for resource isolation,
-[docs/design/image-store.md](docs/design/image-store.md) for Phases 5–7,
-and [docs/design/security-model.md](docs/design/security-model.md) for Phase 8,
-and [docs/design/networking-control-plane.md](docs/design/networking-control-plane.md)
-for Phases 9–12.
-See [docs/design/leases-overlay-workloads-health.md](docs/design/leases-overlay-workloads-health.md)
-for Phases 13–16.
-See [docs/design/rolling-deployments.md](docs/design/rolling-deployments.md) for
-Phase 17.
-See [docs/design/service-discovery.md](docs/design/service-discovery.md) for
-Phase 18.
-See [docs/design/observability.md](docs/design/observability.md) for Phase 19.
-See [docs/design/cli.md](docs/design/cli.md) for Phase 20.
-See [docs/testing/chaos.md](docs/testing/chaos.md) for Phase 21.
-See [docs/testing/security.md](docs/testing/security.md) for Phase 22.
-See [docs/testing/performance.md](docs/testing/performance.md) for Phase 23.
-See [docs/release/v0.1.0.md](docs/release/v0.1.0.md) for Phase 24 and release gates.
-Production release blockers and their objective exit gates are tracked in
-[docs/release/production-readiness.md](docs/release/production-readiness.md).
-The first hardening milestone adds mandatory control-plane mTLS and
-certificate-role authorization; see
-[docs/design/control-plane-security.md](docs/design/control-plane-security.md).
+Status: **software production gate green; deployment certification required**.
+
+> [!IMPORTANT]
+> Passing the software gate does not certify a specific production cluster.
+> Multi-host availability, recovery, monitoring delivery, and independent
+> security evidence must be collected from the target environment. See
+> [production readiness](docs/release/production-readiness.md).
+
+## Capabilities
+
+- OCI image resolution, digest verification, hostile-tar-safe layer unpacking,
+  and OverlayFS snapshots
+- Linux namespaces, `pivot_root`, cgroup v2 limits, capability reduction,
+  `no_new_privs`, seccomp, and PID 1 supervision
+- Bridge/veth networking, persistent IPAM, DNS, NAT, host-port publication,
+  VXLAN overlay, service VIPs, and stateful network policy
+- Restart-safe node reconciliation backed by etcd desired state
+- Resource-aware scheduling with atomic assignment and reservation
+- Renewable node leases, monotonic generations, and bounded self-fencing
+- Workload replicas, health checks, rolling updates, service discovery,
+  encrypted secrets, authenticated node operations, and audit events
+- Mutual TLS, role-based authorization, quotas, rate limits, durable
+  idempotency, encrypted backups, schema migration, and signed releases
+
+## Architecture at a glance
+
+Operators submit desired state through the mutually authenticated gRPC API.
+Controllers and the scheduler persist decisions in etcd. Each `gliderd` watches
+only authoritative assignments for its node and idempotently reconciles image,
+network, cgroup, namespace, and process state. Start with the
+[system context](docs/architecture/system-context.md), then zoom into the
+[container view](docs/architecture/container-view.md),
+[deployment topology](docs/architecture/deployment-view.md), and
+[runtime flows](docs/architecture/runtime-flows.md).
+
+## Build and verify
 
 Run `scripts/test-linux-runtime.sh` for a reproducible, privileged Linux
 run of the full unit + integration test suite (re-execs itself inside a
 container automatically on macOS/Windows).
 
+```bash
+make test
+make docs
+make production-gate
+```
+
+`make production-gate` is intentionally expensive: it includes race tests,
+privileged runtime stress, security and vulnerability checks, fuzzing, chaos,
+backup recovery, packaged HA/upgrade tests, performance envelopes, and signed
+release verification.
+
 ## Documentation map
 
-- [`docs/architecture/overview.md`](docs/architecture/overview.md) — system
-  architecture, identifier model, control-plane state machines, design
-  philosophy.
+- [`docs/README.md`](docs/README.md) — reader-oriented documentation index for
+  architecture, operations, design, testing, and release qualification.
+- [`docs/architecture/README.md`](docs/architecture/README.md) — C4-style
+  system context and container views, production deployment topology, and
+  dynamic runtime/reconciliation diagrams.
+- [`docs/architecture/overview.md`](docs/architecture/overview.md) — design
+  principles, identifier model, control-plane state machines, and non-goals.
 - [`docs/design/`](docs/design/) — subsystem design docs (runtime, container
   lifecycle, failure model, image store/snapshots, security model, cgroups,
   networking, reconciliation, control plane, and scheduling; more are added as
   their phase begins).
 - [`docs/adr/`](docs/adr/) — architecture decision records for frozen
   decisions.
+- [`docs/operations/`](docs/operations/) — outcome-oriented installation,
+  hardening, availability, recovery, upgrade, and incident runbooks.
+- [`docs/contributing/documentation.md`](docs/contributing/documentation.md) —
+  Markdown structure, writing rules, diagram conventions, and review checklist.
 
 ## Scope
 
-Linux only, cgroup v2 only, amd64 first. See
-[docs/architecture/overview.md](docs/architecture/overview.md#non-goals) for
+Linux only, cgroup v2 only, with signed amd64 and arm64 release artifacts. See
+[docs/architecture/overview.md](docs/architecture/overview.md#7-non-goals) for
 explicit non-goals.

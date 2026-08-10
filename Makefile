@@ -1,7 +1,10 @@
-.PHONY: test security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark runtime-benchmark production-gate environment-contract verify-environment demo release verify-release
+.PHONY: test docs security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark runtime-benchmark production-gate environment-contract verify-environment demo release verify-release
 
 test:
 	scripts/test-linux-runtime.sh
+
+docs:
+	scripts/test-docs.sh
 
 security:
 	scripts/test-security.sh
