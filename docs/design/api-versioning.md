@@ -32,16 +32,18 @@ during the v2 migration; `glider.v2` is the typed successor.
 | Deprecated | Served for at least one documented compatibility window with warnings and metrics | Migrate before the stated removal release |
 | Removed | Available only in releases outside the supported compatibility range | Upgrade clients before the server |
 
-The typed v2 contract is **Candidate**. Every control-plane replica serves it
+The typed v2 contract is **Current**. Every control-plane replica serves it
 alongside the legacy Struct-based v1 service, and both versions share the same
 admission, authorization, idempotency, scheduling, and transactional storage
 paths. Pinned generation, immutable-baseline breaking detection,
 reproducibility, generated-client compilation, adapter integration tests, and
 cross-version RBAC checks pass. The bundled CLI and node agent use v2; node
 secret delivery also verifies the echoed assignment generation before exposing
-bytes to a workload. The contract becomes Current only after mixed-version
-deployment qualification passes. The legacy v1 API must not be removed in the
-same release that first serves v2.
+bytes to a workload. Packaged qualification proves v2 create, v1 read/update,
+v2 read/delete, and v1 deletion observation against one current control-plane
+process before exercising legacy rollback. The legacy v1 API remains supported
+for the documented compatibility window and must not be removed in the same
+release that first serves v2.
 
 ## Generation and policy checks
 

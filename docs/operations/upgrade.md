@@ -35,13 +35,18 @@ schema marker, the next attempt verifies that ledger and completes the marker.
 5. If rollback validation fails, stop it, migrate forward again, or restore the
    verified pre-upgrade snapshot according to the disaster-recovery runbook.
 
-Never run v1 and v2 writers concurrently. A mixed read-only observation window
-is permitted by the reader compatibility bound; mixed writers are not.
+Never run schema-v1 and schema-v2 control-plane binaries concurrently. A mixed
+read-only observation window is permitted by the reader compatibility bound;
+mixed schema writers are not. This restriction is independent of API versions:
+the current binary deliberately serves both API v1 and API v2.
 
 `make upgrade-test` is the release qualification for this procedure. It builds
 the signed current release archives, extracts the native packaged binaries,
 builds the pinned last pre-schema writer (`4341694`), and starts a mutually
 authenticated TLS etcd cluster. The test migrates to v2, performs a create and
-delete through the packaged current control plane, stops it, downgrades to v1,
-then performs the same canary lifecycle through the legacy binary. Any binary
-startup, schema bound, API mutation, or rollback failure fails the gate.
+starts the packaged current control plane, and runs a mixed API canary: API v2
+creates, API v1 reads and updates the same resource revision, API v2 observes
+and deletes it, and API v1 confirms the deletion. It then stops the current
+binary, downgrades the schema to v1, and performs a canary lifecycle through the
+legacy binary. Any binary startup, schema bound, API mutation, or rollback
+failure fails the gate.

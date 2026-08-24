@@ -14,17 +14,20 @@ import (
 	"testing"
 	"time"
 
+	gliderv2 "github.com/santinomarial/glider/api/gen/glider/v2"
 	etcdtransport "go.etcd.io/etcd/client/pkg/v3/transport"
 	"go.etcd.io/etcd/server/v3/embed"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/santinomarial/glider/internal/api"
 	"github.com/santinomarial/glider/internal/pki"
 )
 
-func TestPackagedCanaryMigrationAndLegacyRollback(t *testing.T) {
+func TestPackagedCanaryMigrationMixedAPIAndLegacyRollback(t *testing.T) {
 	currentControl := requiredBinary(t, "GLIDER_UPGRADE_CURRENT_CONTROLPLANE")
 	currentAdmin := requiredBinary(t, "GLIDER_UPGRADE_CURRENT_ADMIN")
 	legacyControl := requiredBinary(t, "GLIDER_UPGRADE_LEGACY_CONTROLPLANE")
@@ -38,7 +41,7 @@ func TestPackagedCanaryMigrationAndLegacyRollback(t *testing.T) {
 		t.Fatalf("unexpected migrated schema: %s", status)
 	}
 	current := startControlPlane(t, currentControl, pkiFiles, endpoint)
-	canaryTaskLifecycle(t, current.address, "current-canary")
+	mixedAPITaskLifecycle(t, current.address, "current-canary")
 	current.stop(t)
 
 	runAdmin(t, currentAdmin, pkiFiles, endpoint, "downgrade", "--target=1")
@@ -49,6 +52,67 @@ func TestPackagedCanaryMigrationAndLegacyRollback(t *testing.T) {
 	legacy := startControlPlane(t, legacyControl, pkiFiles, endpoint)
 	canaryTaskLifecycle(t, legacy.address, "legacy-canary")
 	legacy.stop(t)
+}
+
+func mixedAPITaskLifecycle(t *testing.T, address, id string) {
+	t.Helper()
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	typed := gliderv2.NewControlPlaneServiceClient(connection)
+
+	created, err := typed.PutTask(ctx, &gliderv2.PutTaskRequest{Task: &gliderv2.Task{
+		Metadata: &gliderv2.Metadata{Id: id, IdempotencyKey: id + "-v2-create"},
+		Spec:     &gliderv2.TaskSpec{Image: "example.invalid/canary:v2"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.GetTask().GetMetadata().GetRevision() <= 0 || created.GetTask().GetStatus().GetPhase() != gliderv2.TaskPhase_TASK_PHASE_PENDING {
+		t.Fatalf("typed create = %+v", created.GetTask())
+	}
+
+	legacyGet, _ := structpb.NewStruct(map[string]any{"id": id})
+	legacyTask := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/glider.v1.ControlPlane/GetTask", legacyGet, legacyTask); err != nil {
+		t.Fatal(err)
+	}
+	var observed api.Task
+	decodeStruct(t, legacyTask, &observed)
+	if observed.Metadata.Revision != created.GetTask().GetMetadata().GetRevision() || observed.Spec.Image != "example.invalid/canary:v2" || observed.Status.Phase != api.TaskPending {
+		t.Fatalf("legacy read after typed create = %+v", observed)
+	}
+
+	observed.Spec.Image = "example.invalid/canary:v1-update"
+	observed.Metadata.IdempotencyKey = id + "-v1-update"
+	updatedLegacy := new(structpb.Struct)
+	if err := connection.Invoke(ctx, "/glider.v1.ControlPlane/PutTask", mustStruct(t, observed), updatedLegacy); err != nil {
+		t.Fatal(err)
+	}
+	var updated api.Task
+	decodeStruct(t, updatedLegacy, &updated)
+	if updated.Metadata.Revision <= observed.Metadata.Revision {
+		t.Fatalf("legacy update did not advance revision: before=%d after=%d", observed.Metadata.Revision, updated.Metadata.Revision)
+	}
+
+	typedRead, err := typed.GetTask(ctx, &gliderv2.GetTaskRequest{Id: id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if typedRead.GetTask().GetMetadata().GetRevision() != updated.Metadata.Revision || typedRead.GetTask().GetSpec().GetImage() != "example.invalid/canary:v1-update" || typedRead.GetTask().GetStatus().GetPhase() != gliderv2.TaskPhase_TASK_PHASE_PENDING {
+		t.Fatalf("typed read after legacy update = %+v", typedRead.GetTask())
+	}
+
+	if _, err := typed.DeleteTask(ctx, &gliderv2.DeleteTaskRequest{Id: id, Revision: typedRead.GetTask().GetMetadata().GetRevision()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.Invoke(ctx, "/glider.v1.ControlPlane/GetTask", legacyGet, new(structpb.Struct)); status.Code(err) != codes.NotFound {
+		t.Fatalf("legacy read after typed delete = %v", err)
+	}
 }
 
 type testPKI struct{ ca, serverCert, serverKey, clientCert, clientKey, secretKey string }
