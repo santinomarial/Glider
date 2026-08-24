@@ -19,6 +19,11 @@ lease-owned lifecycle phase. Creates normalize to `JOINING`; updates preserve
 phase and reservations, stamp server time, reject capacity below current
 reservations, and prevent a node identity from clearing an operator cordon.
 
+Workload rollout status and service routing status are controller-owned.
+Public mutations reject forged replica progress, cluster IPs, and endpoint
+sets; valid spec updates preserve status and advance a server-owned generation
+only when desired state actually changes.
+
 The gRPC server additionally caps requests at 1 MiB, responses at 4 MiB, and
 concurrent HTTP/2 streams at 256. These are safety ceilings, not tenant quotas;
 per-principal rate limits, atomic cluster quotas, durable idempotency keys,

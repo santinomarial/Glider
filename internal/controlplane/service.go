@@ -276,23 +276,26 @@ func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*struct
 	if err := decode(in, &workload); err != nil {
 		return nil, invalid(err)
 	}
-	if workload.Metadata.DeletionTimestamp != nil {
-		return nil, invalid(errors.New("deletion_timestamp is server managed"))
-	}
 	if err := admission.Workload(workload); err != nil {
 		return nil, invalid(err)
 	}
 	if err := requireIdempotencyKey(workload.Metadata); err != nil {
 		return nil, invalid(err)
 	}
+	var current *api.Workload
 	if workload.Metadata.Revision > 0 {
-		current, err := s.store.GetWorkload(ctx, workload.Metadata.ID)
+		stored, err := s.store.GetWorkload(ctx, workload.Metadata.ID)
 		if err != nil {
 			return nil, mapError(err)
 		}
-		if current.Metadata.DeletionTimestamp != nil {
+		if stored.Metadata.DeletionTimestamp != nil {
 			return nil, status.Error(codes.FailedPrecondition, "deleting workload is immutable")
 		}
+		current = &stored
+	}
+	workload, err := prepareWorkloadMutation(workload, current)
+	if err != nil {
+		return nil, invalid(err)
 	}
 	saved, err := s.store.PutWorkload(ctx, workload, workload.Metadata.Revision)
 	if errors.Is(err, storeapi.ErrConflict) {
@@ -305,6 +308,35 @@ func (s *Service) PutWorkload(ctx context.Context, in *structpb.Struct) (*struct
 		}
 	}
 	return encode(saved, mapError(err))
+}
+
+func prepareWorkloadMutation(workload api.Workload, current *api.Workload) (api.Workload, error) {
+	if workload.Metadata.DeletionTimestamp != nil {
+		return workload, errors.New("metadata.deletion_timestamp is server managed")
+	}
+	if current == nil {
+		if workload.Metadata.Revision != 0 || workload.Metadata.Generation != 0 {
+			return workload, errors.New("metadata revision and generation must be zero on create")
+		}
+		if workload.Status != (api.WorkloadStatus{}) {
+			return workload, errors.New("workload status is server managed")
+		}
+		workload.Metadata.Generation = 1
+		return workload, nil
+	}
+	if workload.Metadata.Generation != 0 && workload.Metadata.Generation != current.Metadata.Generation {
+		return workload, errors.New("metadata.generation is server managed")
+	}
+	if workload.Status != (api.WorkloadStatus{}) && workload.Status != current.Status {
+		return workload, errors.New("workload status is server managed")
+	}
+	workload.Metadata.Generation = current.Metadata.Generation
+	if !reflect.DeepEqual(workload.Spec, current.Spec) {
+		workload.Metadata.Generation++
+	}
+	workload.Metadata.DeletionTimestamp = current.Metadata.DeletionTimestamp
+	workload.Status = current.Status
+	return workload, nil
 }
 func (s *Service) DeleteWorkload(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "id")
@@ -330,6 +362,7 @@ func (s *Service) DeleteWorkload(ctx context.Context, in *structpb.Struct) (*str
 	}
 	now := time.Now().UTC()
 	workload.Metadata.DeletionTimestamp = &now
+	workload.Metadata.Generation++
 	workload.Spec.Replicas = 0
 	workload.Status.RolloutPhase = "Deleting"
 	workload.Status.RolloutMessage = "waiting for owned tasks to terminate"
@@ -351,16 +384,17 @@ func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structp
 	if err := requireIdempotencyKey(service.Metadata); err != nil {
 		return nil, invalid(err)
 	}
-	if service.Metadata.Revision == 0 {
-		if service.Status.ClusterIP != "" || len(service.Status.Endpoints) != 0 {
-			return nil, invalid(errors.New("service status is server managed"))
-		}
-	} else {
-		current, err := s.store.GetService(ctx, service.Metadata.ID)
+	var current *api.Service
+	if service.Metadata.Revision > 0 {
+		stored, err := s.store.GetService(ctx, service.Metadata.ID)
 		if err != nil {
 			return nil, mapError(err)
 		}
-		service.Status = current.Status
+		current = &stored
+	}
+	service, err := prepareServiceMutation(service, current)
+	if err != nil {
+		return nil, invalid(err)
 	}
 	saved, err := s.store.PutService(ctx, service, service.Metadata.Revision)
 	if errors.Is(err, storeapi.ErrConflict) {
@@ -373,6 +407,35 @@ func (s *Service) PutService(ctx context.Context, in *structpb.Struct) (*structp
 		}
 	}
 	return encode(saved, mapError(err))
+}
+
+func prepareServiceMutation(service api.Service, current *api.Service) (api.Service, error) {
+	if service.Metadata.DeletionTimestamp != nil {
+		return service, errors.New("metadata.deletion_timestamp is server managed")
+	}
+	if current == nil {
+		if service.Metadata.Revision != 0 || service.Metadata.Generation != 0 {
+			return service, errors.New("metadata revision and generation must be zero on create")
+		}
+		if !reflect.DeepEqual(service.Status, api.ServiceStatus{}) {
+			return service, errors.New("service status is server managed")
+		}
+		service.Metadata.Generation = 1
+		return service, nil
+	}
+	if service.Metadata.Generation != 0 && service.Metadata.Generation != current.Metadata.Generation {
+		return service, errors.New("metadata.generation is server managed")
+	}
+	if !reflect.DeepEqual(service.Status, api.ServiceStatus{}) && !reflect.DeepEqual(service.Status, current.Status) {
+		return service, errors.New("service status is server managed")
+	}
+	service.Metadata.Generation = current.Metadata.Generation
+	if !reflect.DeepEqual(service.Spec, current.Spec) {
+		service.Metadata.Generation++
+	}
+	service.Metadata.DeletionTimestamp = current.Metadata.DeletionTimestamp
+	service.Status = current.Status
+	return service, nil
 }
 func (s *Service) DeleteService(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "id")

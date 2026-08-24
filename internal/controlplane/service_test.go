@@ -121,6 +121,54 @@ func TestPrepareNodeUpdatePreservesAuthorityFields(t *testing.T) {
 	}
 }
 
+func TestPrepareWorkloadMutationOwnsStatusAndGeneration(t *testing.T) {
+	forged := api.Workload{Status: api.WorkloadStatus{RolloutPhase: "Complete", ReadyReplicas: 99}}
+	if _, err := prepareWorkloadMutation(forged, nil); err == nil {
+		t.Fatal("forged rollout status accepted")
+	}
+	created, err := prepareWorkloadMutation(api.Workload{}, nil)
+	if err != nil || created.Metadata.Generation != 1 {
+		t.Fatalf("created generation=%d err=%v", created.Metadata.Generation, err)
+	}
+	current := api.Workload{Metadata: api.Metadata{Generation: 4}, Spec: api.WorkloadSpec{Replicas: 2}, Status: api.WorkloadStatus{RolloutPhase: "Complete", ReadyReplicas: 2}}
+	update := api.Workload{Spec: api.WorkloadSpec{Replicas: 3}}
+	prepared, err := prepareWorkloadMutation(update, &current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Metadata.Generation != 5 || prepared.Status != current.Status {
+		t.Fatalf("prepared workload=%+v", prepared)
+	}
+	update.Status.RolloutPhase = "Complete"
+	if _, err := prepareWorkloadMutation(update, &current); err == nil {
+		t.Fatal("forged workload update status accepted")
+	}
+}
+
+func TestPrepareServiceMutationOwnsEndpointsAndGeneration(t *testing.T) {
+	forged := api.Service{Status: api.ServiceStatus{ClusterIP: "10.96.0.9", Endpoints: []api.ServiceEndpoint{{Address: "203.0.113.10"}}}}
+	if _, err := prepareServiceMutation(forged, nil); err == nil {
+		t.Fatal("forged service routing status accepted")
+	}
+	created, err := prepareServiceMutation(api.Service{}, nil)
+	if err != nil || created.Metadata.Generation != 1 {
+		t.Fatalf("created generation=%d err=%v", created.Metadata.Generation, err)
+	}
+	current := api.Service{Metadata: api.Metadata{Generation: 2}, Spec: api.ServiceSpec{Port: 80}, Status: api.ServiceStatus{ClusterIP: "10.96.0.2", Endpoints: []api.ServiceEndpoint{{Address: "10.64.0.2"}}}}
+	update := api.Service{Spec: api.ServiceSpec{Port: 443}}
+	prepared, err := prepareServiceMutation(update, &current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Metadata.Generation != 3 || !reflect.DeepEqual(prepared.Status, current.Status) {
+		t.Fatalf("prepared service=%+v", prepared)
+	}
+	update.Status = forged.Status
+	if _, err := prepareServiceMutation(update, &current); err == nil {
+		t.Fatal("forged service update status accepted")
+	}
+}
+
 func TestSecretDeliveryRequiresExactNodeAndGeneration(t *testing.T) {
 	assignment := api.Assignment{TaskID: "task", NodeID: "node-a", Generation: 7}
 	node := transport.Principal{Name: "node-a", Roles: map[string]bool{"node": true}}
