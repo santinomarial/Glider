@@ -32,12 +32,14 @@ during the v2 migration; `glider.v2` is the typed successor.
 | Deprecated | Served for at least one documented compatibility window with warnings and metrics | Migrate before the stated removal release |
 | Removed | Available only in releases outside the supported compatibility range | Upgrade clients before the server |
 
-The typed v2 contract is **Candidate**. Pinned generation, immutable-baseline
-breaking detection, reproducibility, and generated-client compilation pass.
-It becomes Current only
-after its server adapter, CLI, node agent, and mixed-version tests pass
-together. The legacy Struct-based v1 API must not be removed in the same
-release that first serves v2.
+The typed v2 contract is **Candidate**. Every control-plane replica serves it
+alongside the legacy Struct-based v1 service, and both versions share the same
+admission, authorization, idempotency, scheduling, and transactional storage
+paths. Pinned generation, immutable-baseline breaking detection,
+reproducibility, generated-client compilation, adapter integration tests, and
+cross-version RBAC checks pass. It becomes Current only after the bundled CLI
+and node agent migrate and mixed-version deployment tests pass together. The
+legacy v1 API must not be removed in the same release that first serves v2.
 
 ## Generation and policy checks
 

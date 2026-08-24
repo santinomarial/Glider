@@ -129,6 +129,7 @@ func main() {
 	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(1<<20), grpc.MaxSendMsgSize(4<<20), grpc.MaxConcurrentStreams(256))
 	server := grpc.NewServer(serverOptions...)
 	controlplane.Register(server, service)
+	controlplane.RegisterV2(server, service)
 	workloads, err := workloadcontroller.New(store)
 	if err != nil {
 		fatal(err)
