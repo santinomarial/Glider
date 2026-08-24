@@ -1,4 +1,4 @@
-.PHONY: test docs api-contract generate-api security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark runtime-benchmark production-gate environment-contract verify-environment demo release verify-release
+.PHONY: test docs api-contract generated-api generate-api security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark runtime-benchmark production-gate environment-contract verify-environment demo release verify-release
 
 test:
 	scripts/test-linux-runtime.sh
@@ -8,6 +8,9 @@ docs:
 
 api-contract:
 	scripts/test-api-contract.sh
+
+generated-api:
+	scripts/test-generated-api.sh
 
 generate-api:
 	scripts/generate-api.sh

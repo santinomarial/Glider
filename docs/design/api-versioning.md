@@ -32,8 +32,9 @@ during the v2 migration; `glider.v2` is the typed successor.
 | Deprecated | Served for at least one documented compatibility window with warnings and metrics | Migrate before the stated removal release |
 | Removed | Available only in releases outside the supported compatibility range | Upgrade clients before the server |
 
-The typed v2 contract begins in **Draft** state. It becomes Candidate after
-pinned generation and generated-client compilation pass, and Current only
+The typed v2 contract is **Candidate**. Pinned generation, immutable-baseline
+breaking detection, reproducibility, and generated-client compilation pass.
+It becomes Current only
 after its server adapter, CLI, node agent, and mixed-version tests pass
 together. The legacy Struct-based v1 API must not be removed in the same
 release that first serves v2.
@@ -42,12 +43,16 @@ release that first serves v2.
 
 `scripts/test-api-contract.sh` performs offline repository policy checks.
 `scripts/generate-api.sh` uses pinned Buf and Go/gRPC plugin versions to lint
-the complete protobuf schema and generate deterministic Go clients. Generated
-files are committed so release builds do not depend on the schema registry.
+the v2 schema and generate deterministic Go clients. `scripts/test-generated-api.sh`
+regenerates those clients, compares the schema with the immutable Candidate
+descriptor baseline, and compiles the generated package. Generated files are
+committed so release builds do not depend on the schema registry. The legacy
+v1 schema remains outside STANDARD lint while mixed-version compatibility is
+required.
 
-The production gate runs policy checks on every change. Once the v2 API enters
-Current state, Buf breaking-change detection compares it with the immutable v2
-release baseline.
+The production gate runs policy, reproducibility, compilation, and breaking
+checks on every change. Buf breaking-change detection compares v2 with its
+immutable Candidate baseline.
 
 Related: [control-plane security](control-plane-security.md),
 [compatibility matrix](../release/compatibility-matrix.md), and

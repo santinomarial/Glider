@@ -2,10 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUF_IMAGE="bufbuild/buf:1.72.0"
 cd "${REPO_ROOT}"
 
-docker run --rm -v "${REPO_ROOT}:/workspace" -w /workspace "${BUF_IMAGE}" lint
-docker run --rm -v "${REPO_ROOT}:/workspace" -w /workspace "${BUF_IMAGE}" generate
+scripts/run-buf.sh lint . --path api/proto/glider/v2
+scripts/run-buf.sh generate --path api/proto/glider/v2
 
 echo "API GENERATED: typed Go messages and gRPC clients are synchronized"
