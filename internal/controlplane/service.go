@@ -29,6 +29,8 @@ import (
 
 const ServiceName = "glider.v1.ControlPlane"
 
+var errTaskNotMutable = errors.New("task is not mutable through the public API")
+
 type Service struct {
 	store     *etcdstore.Store
 	scheduler *scheduler.Controller
@@ -61,6 +63,21 @@ func (s *Service) PutTask(ctx context.Context, in *structpb.Struct) (*structpb.S
 	if err := requireIdempotencyKey(task.Metadata); err != nil {
 		return nil, invalid(err)
 	}
+	var current *api.Task
+	if task.Metadata.Revision > 0 {
+		stored, err := s.store.GetTask(ctx, task.Metadata.ID)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		current = &stored
+	}
+	task, err := prepareTaskMutation(task, current)
+	if errors.Is(err, errTaskNotMutable) {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err != nil {
+		return nil, invalid(err)
+	}
 	saved, err := s.store.PutTask(ctx, task, task.Metadata.Revision)
 	if errors.Is(err, storeapi.ErrConflict) {
 		current, getErr := s.store.GetTask(ctx, task.Metadata.ID)
@@ -72,6 +89,36 @@ func (s *Service) PutTask(ctx context.Context, in *structpb.Struct) (*structpb.S
 		}
 	}
 	return encode(saved, mapError(err))
+}
+
+func prepareTaskMutation(task api.Task, current *api.Task) (api.Task, error) {
+	if task.Metadata.DeletionTimestamp != nil {
+		return task, errors.New("metadata.deletion_timestamp is server managed")
+	}
+	if current == nil {
+		if task.Metadata.Revision != 0 || task.Metadata.Generation != 0 {
+			return task, errors.New("metadata revision and generation must be zero on create")
+		}
+		pending := api.TaskStatus{Phase: api.TaskPending}
+		if task.Status != (api.TaskStatus{}) && task.Status != pending {
+			return task, errors.New("task status is server managed")
+		}
+		task.Status = pending
+		return task, nil
+	}
+	if current.Metadata.DeletionTimestamp != nil || current.Status.Phase != api.TaskPending || current.Spec.WorkloadID != "" {
+		return task, errTaskNotMutable
+	}
+	if task.Metadata.Generation != 0 && task.Metadata.Generation != current.Metadata.Generation {
+		return task, errors.New("metadata.generation is server managed")
+	}
+	if task.Status != (api.TaskStatus{}) && !reflect.DeepEqual(task.Status, current.Status) {
+		return task, errors.New("task status is server managed")
+	}
+	task.Metadata.Generation = current.Metadata.Generation
+	task.Metadata.DeletionTimestamp = current.Metadata.DeletionTimestamp
+	task.Status = current.Status
+	return task, nil
 }
 func (s *Service) DeleteTask(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "id")
