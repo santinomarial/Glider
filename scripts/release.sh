@@ -24,6 +24,29 @@ trap 'rm -rf "${STAGE_ROOT}"' EXIT
 export CGO_ENABLED=0 SOURCE_DATE_EPOCH="${SOURCE_EPOCH}"
 LDFLAGS="-s -w -buildid= -X github.com/santinomarial/glider/internal/version.Version=${VERSION}"
 BINARIES=(glider glider-admin glider-controlplane gliderd glider-runtime glider-exec)
+
+create_archive() {
+	local stage="$1"
+	local archive="$2"
+	local stage_name
+	stage_name="$(basename "${stage}")"
+	if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+		tar --sort=name --mtime="@${SOURCE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "${STAGE_ROOT}" -czf "${archive}" "${stage_name}"
+		return
+	fi
+	if ! command -v docker >/dev/null 2>&1; then
+		echo "reproducible archives require GNU tar or Docker" >&2
+		return 2
+	fi
+	echo "GNU tar unavailable; creating reproducible archive with golang:1.26"
+	docker run --rm \
+		-v "${STAGE_ROOT}:/stage:ro" \
+		-v "${OUTPUT}:/output" \
+		-w /stage \
+		golang:1.26 \
+		tar --sort=name --mtime="@${SOURCE_EPOCH}" --owner=0 --group=0 --numeric-owner -czf "/output/$(basename "${archive}")" "${stage_name}"
+}
+
 for arch in amd64 arm64; do
 	stage="${STAGE_ROOT}/glider-${VERSION}-linux-${arch}"
 	mkdir -p "${stage}/bin" "${stage}/libexec" "${stage}/systemd" "${stage}/config" "${stage}/monitoring"
@@ -39,7 +62,7 @@ for arch in amd64 arm64; do
 	chmod 0755 "${stage}/install.sh"
 	cp VERSION README.md "${stage}/"
 	archive="${OUTPUT}/glider-${VERSION}-linux-${arch}.tar.gz"
-	tar --sort=name --mtime="@${SOURCE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "${STAGE_ROOT}" -czf "${archive}" "$(basename "${stage}")"
+	create_archive "${stage}" "${archive}"
 	rm -rf "${stage}"
 done
 go list -m -json all > "${OUTPUT}/modules.json"

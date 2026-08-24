@@ -45,4 +45,6 @@ inventory, and detached Ed25519 signatures. `scripts/verify-release.sh` is the
 release acceptance check. Every release also contains an SPDX 2.3 dependency
 SBOM and an in-toto SLSA v1 provenance statement binding both architecture
 archives to the exact Git commit and SHA-256 digest. Verification fails if an
-artifact no longer matches its provenance subject.
+artifact no longer matches its provenance subject. Archive normalization uses
+local GNU tar when available and the pinned `golang:1.26` container otherwise,
+so the same release command works on macOS.
