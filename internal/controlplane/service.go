@@ -143,11 +143,72 @@ func (s *Service) PutNode(ctx context.Context, in *structpb.Struct) (*structpb.S
 	if err := admission.Node(node); err != nil {
 		return nil, invalid(err)
 	}
-	if principal, ok := transport.PrincipalFromContext(ctx); ok && !nodeCanMutate(principal, node.Metadata.ID) {
+	principal, authenticated := transport.PrincipalFromContext(ctx)
+	if authenticated && !nodeCanMutate(principal, node.Metadata.ID) {
 		return nil, status.Error(codes.PermissionDenied, "node identity cannot mutate another node")
+	}
+	var current *api.Node
+	if node.Metadata.Revision > 0 {
+		stored, err := s.store.GetNode(ctx, node.Metadata.ID)
+		if err != nil {
+			return nil, mapError(err)
+		}
+		current = &stored
+	}
+	node, err := prepareNodeMutation(node, current, authenticated && principal.Roles["node"], time.Now().UTC())
+	if err != nil {
+		return nil, invalid(err)
+	}
+	if !node.Allocatable().Fits(node.Status.Reserved) {
+		return nil, invalid(errors.New("node capacity cannot be reduced below its reserved resources"))
 	}
 	saved, err := s.store.PutNode(ctx, node, node.Metadata.Revision)
 	return encode(saved, mapError(err))
+}
+
+func prepareNodeMutation(node api.Node, current *api.Node, nodePrincipal bool, now time.Time) (api.Node, error) {
+	if node.Metadata.DeletionTimestamp != nil {
+		return node, errors.New("metadata.deletion_timestamp is server managed")
+	}
+	if current == nil {
+		if node.Metadata.Revision != 0 || node.Metadata.Generation != 0 {
+			return node, errors.New("metadata revision and generation must be zero on create")
+		}
+		if node.Status.Phase != "" && node.Status.Phase != api.NodeJoining {
+			return node, errors.New("node phase is server managed")
+		}
+		if node.Status.Reserved != (api.Resources{}) || !node.Status.UpdatedAt.IsZero() {
+			return node, errors.New("node reservation and update time are server managed")
+		}
+		node.Status.Phase = api.NodeJoining
+		node.Status.Reserved = api.Resources{}
+		node.Status.UpdatedAt = now
+		return node, nil
+	}
+	if node.Metadata.Generation != 0 && node.Metadata.Generation != current.Metadata.Generation {
+		return node, errors.New("metadata.generation is server managed")
+	}
+	if node.Status.Phase != "" && node.Status.Phase != current.Status.Phase {
+		return node, errors.New("node phase is server managed")
+	}
+	if node.Status.Reserved != (api.Resources{}) && node.Status.Reserved != current.Status.Reserved {
+		return node, errors.New("node reservation is server managed")
+	}
+	if !node.Status.UpdatedAt.IsZero() && !node.Status.UpdatedAt.Equal(current.Status.UpdatedAt) {
+		return node, errors.New("node update time is server managed")
+	}
+	if reflect.DeepEqual(node.Status, api.NodeStatus{}) {
+		node.Status = current.Status
+	}
+	node.Metadata.Generation = current.Metadata.Generation
+	node.Metadata.DeletionTimestamp = current.Metadata.DeletionTimestamp
+	node.Status.Phase = current.Status.Phase
+	node.Status.Reserved = current.Status.Reserved
+	node.Status.UpdatedAt = now
+	if nodePrincipal {
+		node.Spec.Unschedulable = current.Spec.Unschedulable
+	}
+	return node, nil
 }
 func (s *Service) GetTask(ctx context.Context, in *structpb.Struct) (*structpb.Struct, error) {
 	id, err := requiredString(in, "id")

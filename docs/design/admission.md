@@ -13,6 +13,12 @@ stored status and generation, reject attempts to forge node ownership,
 readiness, restart deadlines, or terminal results, and refuse mutation of
 active or workload-controller-owned tasks.
 
+Node clients may report bounded usage, images, and storage observations for
+their certificate-bound identity, but cannot write scheduler reservations or
+lease-owned lifecycle phase. Creates normalize to `JOINING`; updates preserve
+phase and reservations, stamp server time, reject capacity below current
+reservations, and prevent a node identity from clearing an operator cordon.
+
 The gRPC server additionally caps requests at 1 MiB, responses at 4 MiB, and
 concurrent HTTP/2 streams at 256. These are safety ceilings, not tenant quotas;
 per-principal rate limits, atomic cluster quotas, durable idempotency keys,

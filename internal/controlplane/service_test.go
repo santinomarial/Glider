@@ -87,6 +87,40 @@ func TestPrepareTaskUpdateRejectsOwnedOrActiveTask(t *testing.T) {
 	}
 }
 
+func TestPrepareNodeCreateOwnsPhaseAndReservation(t *testing.T) {
+	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+	forged := api.Node{Status: api.NodeStatus{Phase: api.NodeReady, Reserved: api.Resources{CPUMilli: 100}}}
+	if _, err := prepareNodeMutation(forged, nil, true, now); err == nil {
+		t.Fatal("forged ready node accepted")
+	}
+	created, err := prepareNodeMutation(api.Node{Status: api.NodeStatus{ObservedUsage: api.Resources{CPUMilli: 20}}}, nil, true, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Status.Phase != api.NodeJoining || created.Status.Reserved != (api.Resources{}) || !created.Status.UpdatedAt.Equal(now) {
+		t.Fatalf("created status=%+v", created.Status)
+	}
+}
+
+func TestPrepareNodeUpdatePreservesAuthorityFields(t *testing.T) {
+	previous := time.Date(2026, 8, 24, 11, 0, 0, 0, time.UTC)
+	now := previous.Add(time.Hour)
+	current := api.Node{Metadata: api.Metadata{Generation: 3}, Spec: api.NodeSpec{Unschedulable: true}, Status: api.NodeStatus{Phase: api.NodeDraining, Reserved: api.Resources{CPUMilli: 500}, ObservedUsage: api.Resources{CPUMilli: 100}, UpdatedAt: previous}}
+	update := api.Node{Status: api.NodeStatus{Images: []string{"sha256:image"}}}
+	prepared, err := prepareNodeMutation(update, &current, true, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Status.Phase != api.NodeDraining || prepared.Status.Reserved.CPUMilli != 500 || !prepared.Spec.Unschedulable || !prepared.Status.UpdatedAt.Equal(now) {
+		t.Fatalf("authority fields changed: %+v", prepared)
+	}
+	forged := update
+	forged.Status.Reserved.CPUMilli = 1
+	if _, err := prepareNodeMutation(forged, &current, true, now); err == nil {
+		t.Fatal("forged reservation accepted")
+	}
+}
+
 func TestSecretDeliveryRequiresExactNodeAndGeneration(t *testing.T) {
 	assignment := api.Assignment{TaskID: "task", NodeID: "node-a", Generation: 7}
 	node := transport.Principal{Name: "node-a", Roles: map[string]bool{"node": true}}
