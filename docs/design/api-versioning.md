@@ -37,10 +37,11 @@ alongside the legacy Struct-based v1 service, and both versions share the same
 admission, authorization, idempotency, scheduling, and transactional storage
 paths. Pinned generation, immutable-baseline breaking detection,
 reproducibility, generated-client compilation, adapter integration tests, and
-cross-version RBAC checks pass. The node agent uses v2 for generation-fenced
-secret delivery. The contract becomes Current only after the bundled CLI
-migrates and mixed-version deployment tests pass together. The legacy v1 API
-must not be removed in the same release that first serves v2.
+cross-version RBAC checks pass. The bundled CLI and node agent use v2; node
+secret delivery also verifies the echoed assignment generation before exposing
+bytes to a workload. The contract becomes Current only after mixed-version
+deployment qualification passes. The legacy v1 API must not be removed in the
+same release that first serves v2.
 
 ## Generation and policy checks
 

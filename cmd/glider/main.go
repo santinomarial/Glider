@@ -9,43 +9,136 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	gliderv2 "github.com/santinomarial/glider/api/gen/glider/v2"
 	"github.com/santinomarial/glider/internal/api"
+	"github.com/santinomarial/glider/internal/apiv2"
 	"github.com/santinomarial/glider/internal/transport"
 	"github.com/santinomarial/glider/internal/version"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
-
-const service = "glider.v1.ControlPlane"
 
 type client struct {
 	conn         *grpc.ClientConn
+	control      gliderv2.ControlPlaneServiceClient
 	transport    credentials.TransportCredentials
 	nodeEndpoint string
 }
 
 func (c client) call(ctx context.Context, method string, input any) (map[string]any, error) {
-	data, err := json.Marshal(input)
+	var response proto.Message
+	var err error
+	switch method {
+	case "PutTask":
+		request := new(gliderv2.PutTaskRequest)
+		if err = controlRequest(input, "task", request); err == nil {
+			response, err = c.control.PutTask(ctx, request)
+		}
+	case "GetTask":
+		request := new(gliderv2.GetTaskRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.GetTask(ctx, request)
+		}
+	case "DeleteTask":
+		request := new(gliderv2.DeleteTaskRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.DeleteTask(ctx, request)
+		}
+	case "PutWorkload":
+		request := new(gliderv2.PutWorkloadRequest)
+		if err = controlRequest(input, "workload", request); err == nil {
+			response, err = c.control.PutWorkload(ctx, request)
+		}
+	case "DeleteWorkload":
+		request := new(gliderv2.DeleteWorkloadRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.DeleteWorkload(ctx, request)
+		}
+	case "ListWorkloads":
+		response, err = c.control.ListWorkloads(ctx, &gliderv2.ListWorkloadsRequest{})
+	case "DeleteService":
+		request := new(gliderv2.DeleteServiceRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.DeleteService(ctx, request)
+		}
+	case "ListServices":
+		response, err = c.control.ListServices(ctx, &gliderv2.ListServicesRequest{})
+	case "ListNodes":
+		response, err = c.control.ListNodes(ctx, &gliderv2.ListNodesRequest{})
+	case "DrainNode":
+		request := new(gliderv2.DrainNodeRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.DrainNode(ctx, request)
+		}
+	case "RemoveNode":
+		request := new(gliderv2.RemoveNodeRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.RemoveNode(ctx, request)
+		}
+	case "ListTasks":
+		response, err = c.control.ListTasks(ctx, &gliderv2.ListTasksRequest{})
+	case "ListEvents":
+		response, err = c.control.ListEvents(ctx, &gliderv2.ListEventsRequest{})
+	case "PutSecret":
+		request := new(gliderv2.PutSecretRequest)
+		if err = controlRequest(input, "secret", request); err == nil {
+			response, err = c.control.PutSecret(ctx, request)
+		}
+	case "ListSecrets":
+		response, err = c.control.ListSecrets(ctx, &gliderv2.ListSecretsRequest{})
+	case "DeleteSecret":
+		request := new(gliderv2.DeleteSecretRequest)
+		if err = controlRequest(input, "", request); err == nil {
+			response, err = c.control.DeleteSecret(ctx, request)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported control-plane method %q", method)
+	}
 	if err != nil {
 		return nil, err
 	}
-	var object map[string]any
-	if err = json.Unmarshal(data, &object); err != nil {
-		return nil, err
-	}
-	in, _ := structpb.NewStruct(object)
-	out := new(structpb.Struct)
-	err = c.conn.Invoke(ctx, "/"+service+"/"+method, in, out)
+	result, err := apiv2.ToLegacy(response)
 	if err != nil {
 		return nil, err
 	}
-	return out.AsMap(), nil
+	if wrapper := responseWrapper(method); wrapper != "" {
+		resource, ok := result[wrapper].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("typed %s response has no %s", method, wrapper)
+		}
+		return resource, nil
+	}
+	return result, nil
+}
+
+func controlRequest(input any, wrapper string, destination proto.Message) error {
+	if wrapper != "" {
+		input = map[string]any{wrapper: input}
+	}
+	return apiv2.FromLegacy(input, destination)
+}
+
+func responseWrapper(method string) string {
+	return map[string]string{
+		"PutTask":        "task",
+		"GetTask":        "task",
+		"DeleteTask":     "result",
+		"PutWorkload":    "workload",
+		"DeleteWorkload": "workload",
+		"DeleteService":  "result",
+		"DrainNode":      "node",
+		"RemoveNode":     "result",
+		"PutSecret":      "secret",
+		"DeleteSecret":   "result",
+	}[method]
 }
 func main() {
 	endpoint := flag.String("endpoint", env("GLIDER_ENDPOINT", "127.0.0.1:8443"), "control-plane address")
@@ -81,7 +174,7 @@ func main() {
 	defer conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	c := client{conn: conn, transport: transportCredentials, nodeEndpoint: *nodeEndpoint}
+	c := client{conn: conn, control: gliderv2.NewControlPlaneServiceClient(conn), transport: transportCredentials, nodeEndpoint: *nodeEndpoint}
 	if err := run(ctx, c, flag.Args()); err != nil {
 		fatal(err)
 	}

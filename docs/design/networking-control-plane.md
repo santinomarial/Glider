@@ -39,10 +39,12 @@ sudo gliderd --node-id node-a --etcd-endpoints 127.0.0.1:2379
 The authoritative keyspace is
 `/glider/v1/clusters/<cluster-id>/{tasks,nodes,assignments}`. Resource revisions
 come from etcd `ModRevision`; creates and updates use compare-and-swap. The
-`glider-controlplane` process exposes `glider.v1.ControlPlane` over gRPC. The
-Phase 11 wire contract uses `google.protobuf.Struct` to carry the versioned JSON
-resource model while fields are evolving; both the RPC package and each
-resource's `apiVersion: glider.dev/v1` are explicit compatibility boundaries.
+`glider-controlplane` process exposes the typed `glider.v2.ControlPlaneService`
+and the compatibility-only `glider.v1.ControlPlane` service over gRPC. Bundled
+clients use v2. The legacy service uses `google.protobuf.Struct` to carry the
+versioned JSON resource model until its documented compatibility window ends;
+both the RPC package and each resource's `apiVersion: glider.dev/v1` remain
+explicit compatibility boundaries.
 
 ```bash
 glider-controlplane --listen 127.0.0.1:8443 \
