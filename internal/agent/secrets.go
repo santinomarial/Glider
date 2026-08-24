@@ -2,15 +2,14 @@ package agent
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
+	gliderv2 "github.com/santinomarial/glider/api/gen/glider/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/santinomarial/glider/internal/api"
 )
@@ -19,7 +18,14 @@ type SecretResolver interface {
 	Resolve(context.Context, api.Assignment) ([]string, error)
 }
 
-type ControlPlaneSecretResolver struct{ conn *grpc.ClientConn }
+type assignmentSecretsClient interface {
+	GetAssignmentSecrets(context.Context, *gliderv2.GetAssignmentSecretsRequest, ...grpc.CallOption) (*gliderv2.GetAssignmentSecretsResponse, error)
+}
+
+type ControlPlaneSecretResolver struct {
+	conn   *grpc.ClientConn
+	client assignmentSecretsClient
+}
 
 func NewControlPlaneSecretResolver(endpoint string, transport credentials.TransportCredentials) (*ControlPlaneSecretResolver, error) {
 	if endpoint == "" || transport == nil {
@@ -29,7 +35,7 @@ func NewControlPlaneSecretResolver(endpoint string, transport credentials.Transp
 	if err != nil {
 		return nil, err
 	}
-	return &ControlPlaneSecretResolver{conn: conn}, nil
+	return &ControlPlaneSecretResolver{conn: conn, client: gliderv2.NewControlPlaneServiceClient(conn)}, nil
 }
 
 func (r *ControlPlaneSecretResolver) Close() error { return r.conn.Close() }
@@ -38,28 +44,26 @@ func (r *ControlPlaneSecretResolver) Resolve(ctx context.Context, assignment api
 	if len(assignment.Secrets) == 0 {
 		return nil, nil
 	}
-	in, _ := structpb.NewStruct(map[string]any{"task_id": assignment.TaskID, "generation": assignment.Generation})
-	out := new(structpb.Struct)
-	if err := r.conn.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", in, out); err != nil {
+	out, err := r.client.GetAssignmentSecrets(ctx, &gliderv2.GetAssignmentSecretsRequest{TaskId: assignment.TaskID, Generation: assignment.Generation})
+	if err != nil {
 		return nil, err
 	}
-	encoded, ok := out.AsMap()["values"].(map[string]any)
-	if !ok {
-		return nil, errors.New("invalid secret delivery response")
+	if out.GetTaskId() != assignment.TaskID || out.GetGeneration() != assignment.Generation {
+		return nil, errors.New("secret delivery response does not match the requested assignment generation")
 	}
-	return decodeSecretValues(encoded, assignment)
+	return decodeSecretValues(out.GetEnvironment(), assignment)
 }
 
-func decodeSecretValues(encoded map[string]any, assignment api.Assignment) ([]string, error) {
-	if len(encoded) != len(assignment.Secrets) {
+func decodeSecretValues(environment map[string][]byte, assignment api.Assignment) ([]string, error) {
+	if len(environment) != len(assignment.Secrets) {
 		return nil, errors.New("invalid secret delivery response")
 	}
 	allowed := make(map[string]bool, len(assignment.Secrets))
 	for _, ref := range assignment.Secrets {
 		allowed[ref.Env] = true
 	}
-	keys := make([]string, 0, len(encoded))
-	for key := range encoded {
+	keys := make([]string, 0, len(environment))
+	for key := range environment {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
@@ -68,12 +72,8 @@ func decodeSecretValues(encoded map[string]any, assignment api.Assignment) ([]st
 		if !allowed[key] {
 			return nil, fmt.Errorf("secret delivery returned unrequested environment %s", key)
 		}
-		value, ok := encoded[key].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid secret value for %s", key)
-		}
-		data, err := base64.StdEncoding.DecodeString(value)
-		if err != nil || strings.ContainsRune(string(data), '\x00') {
+		data := environment[key]
+		if strings.ContainsRune(string(data), '\x00') {
 			return nil, fmt.Errorf("secret value for %s cannot be represented in an environment", key)
 		}
 		values = append(values, key+"="+string(data))

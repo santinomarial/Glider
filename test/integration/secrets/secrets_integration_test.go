@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	gliderv2 "github.com/santinomarial/glider/api/gen/glider/v2"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 	"google.golang.org/grpc"
@@ -46,15 +47,14 @@ func TestAssignmentFencedSecretDeliveryOverMTLS(t *testing.T) {
 	serverAddress, dial := startControlPlane(t, store, cipher)
 	nodeA := dial("node-a", serverAddress)
 	defer nodeA.Close()
-	out := new(structpb.Struct)
-	in, _ := structpb.NewStruct(map[string]any{"task_id": "task", "generation": assignment.Generation})
-	if err := nodeA.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", in, out); err != nil {
+	nodeAClient := gliderv2.NewControlPlaneServiceClient(nodeA)
+	in := &gliderv2.GetAssignmentSecretsRequest{TaskId: "task", Generation: assignment.Generation}
+	out, err := nodeAClient.GetAssignmentSecrets(ctx, in)
+	if err != nil {
 		t.Fatal(err)
 	}
-	values := out.AsMap()["values"].(map[string]any)
-	decoded, _ := base64.StdEncoding.DecodeString(values["PASSWORD"].(string))
-	if string(decoded) != "delivered-value" {
-		t.Fatalf("secret = %q", decoded)
+	if string(out.GetEnvironment()["PASSWORD"]) != "delivered-value" {
+		t.Fatalf("secret = %q", out.GetEnvironment()["PASSWORD"])
 	}
 	rotated, _ := cipher.Encrypt(api.Secret{Metadata: api.Metadata{ID: "database"}, Data: map[string][]byte{"password": []byte("rotated-value")}})
 	if _, err := store.PutSecret(ctx, rotated, savedSecret.Metadata.Revision); err != nil {
@@ -69,27 +69,25 @@ func TestAssignmentFencedSecretDeliveryOverMTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := nodeA.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", in, new(structpb.Struct)); status.Code(err) != codes.PermissionDenied {
+	if _, err := nodeAClient.GetAssignmentSecrets(ctx, in); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("superseded generation error = %v", err)
 	}
-	nextInput, _ := structpb.NewStruct(map[string]any{"task_id": "task", "generation": next.Generation})
-	nextOutput := new(structpb.Struct)
-	if err := nodeA.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", nextInput, nextOutput); err != nil {
+	nextInput := &gliderv2.GetAssignmentSecretsRequest{TaskId: "task", Generation: next.Generation}
+	nextOutput, err := nodeAClient.GetAssignmentSecrets(ctx, nextInput)
+	if err != nil {
 		t.Fatal(err)
 	}
-	nextValues := nextOutput.AsMap()["values"].(map[string]any)
-	nextDecoded, _ := base64.StdEncoding.DecodeString(nextValues["PASSWORD"].(string))
-	if string(nextDecoded) != "rotated-value" {
-		t.Fatalf("rotated secret = %q", nextDecoded)
+	if string(nextOutput.GetEnvironment()["PASSWORD"]) != "rotated-value" {
+		t.Fatalf("rotated secret = %q", nextOutput.GetEnvironment()["PASSWORD"])
 	}
 
-	stale, _ := structpb.NewStruct(map[string]any{"task_id": "task", "generation": next.Generation + 1})
-	if err := nodeA.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", stale, new(structpb.Struct)); status.Code(err) != codes.PermissionDenied {
+	stale := &gliderv2.GetAssignmentSecretsRequest{TaskId: "task", Generation: next.Generation + 1}
+	if _, err := nodeAClient.GetAssignmentSecrets(ctx, stale); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("stale generation error = %v", err)
 	}
 	peer := dial("node-b", serverAddress)
 	defer peer.Close()
-	if err := peer.Invoke(ctx, "/glider.v1.ControlPlane/GetAssignmentSecrets", in, new(structpb.Struct)); status.Code(err) != codes.PermissionDenied {
+	if _, err := gliderv2.NewControlPlaneServiceClient(peer).GetAssignmentSecrets(ctx, in); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("peer node error = %v", err)
 	}
 	events, _ := store.ListEvents(ctx)
@@ -182,6 +180,7 @@ func startControlPlane(t *testing.T, store *etcdstore.Store, cipher *secretapi.C
 	server := grpc.NewServer(grpc.Creds(serverCreds), grpc.UnaryInterceptor(transport.UnaryAuthorizationInterceptor()))
 	service, _ := controlplane.New(store, cipher)
 	controlplane.Register(server, service)
+	controlplane.RegisterV2(server, service)
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Stop(); listener.Close() })
 	dial := func(name, address string) *grpc.ClientConn {
