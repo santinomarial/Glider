@@ -1004,6 +1004,10 @@ type TaskStatus struct {
 	Ready                    bool                   `protobuf:"varint,5,opt,name=ready,proto3" json:"ready,omitempty"`
 	RestartCount             uint32                 `protobuf:"varint,6,opt,name=restart_count,json=restartCount,proto3" json:"restart_count,omitempty"`
 	LastHealthTransitionTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=last_health_transition_time,json=lastHealthTransitionTime,proto3" json:"last_health_transition_time,omitempty"`
+	StartTime                *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	FinishTime               *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=finish_time,json=finishTime,proto3" json:"finish_time,omitempty"`
+	ExitCode                 *int32                 `protobuf:"varint,10,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
+	TerminationReason        string                 `protobuf:"bytes,11,opt,name=termination_reason,json=terminationReason,proto3" json:"termination_reason,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -1085,6 +1089,34 @@ func (x *TaskStatus) GetLastHealthTransitionTime() *timestamppb.Timestamp {
 		return x.LastHealthTransitionTime
 	}
 	return nil
+}
+
+func (x *TaskStatus) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *TaskStatus) GetFinishTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishTime
+	}
+	return nil
+}
+
+func (x *TaskStatus) GetExitCode() int32 {
+	if x != nil && x.ExitCode != nil {
+		return *x.ExitCode
+	}
+	return 0
+}
+
+func (x *TaskStatus) GetTerminationReason() string {
+	if x != nil {
+		return x.TerminationReason
+	}
+	return ""
 }
 
 type SecretEnvReference struct {
@@ -2227,7 +2259,7 @@ const file_glider_v2_resources_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb6\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8d\x04\n" +
 	"\n" +
 	"TaskStatus\x12*\n" +
 	"\x05phase\x18\x01 \x01(\x0e2\x14.glider.v2.TaskPhaseR\x05phase\x123\n" +
@@ -2236,7 +2268,16 @@ const file_glider_v2_resources_proto_rawDesc = "" +
 	"\aaddress\x18\x04 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05ready\x18\x05 \x01(\bR\x05ready\x12#\n" +
 	"\rrestart_count\x18\x06 \x01(\rR\frestartCount\x12Y\n" +
-	"\x1blast_health_transition_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x18lastHealthTransitionTime\"v\n" +
+	"\x1blast_health_transition_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x18lastHealthTransitionTime\x129\n" +
+	"\n" +
+	"start_time\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x12;\n" +
+	"\vfinish_time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishTime\x12 \n" +
+	"\texit_code\x18\n" +
+	" \x01(\x05H\x00R\bexitCode\x88\x01\x01\x12-\n" +
+	"\x12termination_reason\x18\v \x01(\tR\x11terminationReasonB\f\n" +
+	"\n" +
+	"_exit_code\"v\n" +
 	"\x12SecretEnvReference\x12\x1b\n" +
 	"\tsecret_id\x18\x01 \x01(\tR\bsecretId\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x121\n" +
@@ -2456,39 +2497,41 @@ var file_glider_v2_resources_proto_depIdxs = []int32{
 	15, // 27: glider.v2.TaskSpec.network_policy:type_name -> glider.v2.NetworkPolicy
 	3,  // 28: glider.v2.TaskStatus.phase:type_name -> glider.v2.TaskPhase
 	34, // 29: glider.v2.TaskStatus.last_health_transition_time:type_name -> google.protobuf.Timestamp
-	16, // 30: glider.v2.NetworkPolicy.ingress:type_name -> glider.v2.NetworkRule
-	16, // 31: glider.v2.NetworkPolicy.egress:type_name -> glider.v2.NetworkRule
-	4,  // 32: glider.v2.Workload.metadata:type_name -> glider.v2.Metadata
-	18, // 33: glider.v2.Workload.spec:type_name -> glider.v2.WorkloadSpec
-	20, // 34: glider.v2.Workload.status:type_name -> glider.v2.WorkloadStatus
-	12, // 35: glider.v2.WorkloadSpec.template:type_name -> glider.v2.TaskSpec
-	19, // 36: glider.v2.WorkloadSpec.rollout:type_name -> glider.v2.RolloutStrategy
-	35, // 37: glider.v2.RolloutStrategy.progress_deadline:type_name -> google.protobuf.Duration
-	34, // 38: glider.v2.WorkloadStatus.rollout_started_time:type_name -> google.protobuf.Timestamp
-	34, // 39: glider.v2.WorkloadStatus.last_progress_time:type_name -> google.protobuf.Timestamp
-	4,  // 40: glider.v2.Service.metadata:type_name -> glider.v2.Metadata
-	22, // 41: glider.v2.Service.spec:type_name -> glider.v2.ServiceSpec
-	24, // 42: glider.v2.Service.status:type_name -> glider.v2.ServiceStatus
-	31, // 43: glider.v2.ServiceSpec.selector:type_name -> glider.v2.ServiceSpec.SelectorEntry
-	23, // 44: glider.v2.ServiceStatus.endpoints:type_name -> glider.v2.ServiceEndpoint
-	34, // 45: glider.v2.ServiceStatus.update_time:type_name -> google.protobuf.Timestamp
-	4,  // 46: glider.v2.Secret.metadata:type_name -> glider.v2.Metadata
-	32, // 47: glider.v2.Secret.data:type_name -> glider.v2.Secret.DataEntry
-	4,  // 48: glider.v2.Event.metadata:type_name -> glider.v2.Metadata
-	34, // 49: glider.v2.Event.time:type_name -> google.protobuf.Timestamp
-	33, // 50: glider.v2.Event.attributes:type_name -> glider.v2.Event.AttributesEntry
-	4,  // 51: glider.v2.Assignment.metadata:type_name -> glider.v2.Metadata
-	5,  // 52: glider.v2.Assignment.resources:type_name -> glider.v2.Resources
-	1,  // 53: glider.v2.Assignment.restart_policy:type_name -> glider.v2.RestartPolicy
-	10, // 54: glider.v2.Assignment.health:type_name -> glider.v2.HealthSpec
-	14, // 55: glider.v2.Assignment.secrets:type_name -> glider.v2.SecretEnvReference
-	15, // 56: glider.v2.Assignment.network_policy:type_name -> glider.v2.NetworkPolicy
-	34, // 57: glider.v2.Assignment.create_time:type_name -> google.protobuf.Timestamp
-	58, // [58:58] is the sub-list for method output_type
-	58, // [58:58] is the sub-list for method input_type
-	58, // [58:58] is the sub-list for extension type_name
-	58, // [58:58] is the sub-list for extension extendee
-	0,  // [0:58] is the sub-list for field type_name
+	34, // 30: glider.v2.TaskStatus.start_time:type_name -> google.protobuf.Timestamp
+	34, // 31: glider.v2.TaskStatus.finish_time:type_name -> google.protobuf.Timestamp
+	16, // 32: glider.v2.NetworkPolicy.ingress:type_name -> glider.v2.NetworkRule
+	16, // 33: glider.v2.NetworkPolicy.egress:type_name -> glider.v2.NetworkRule
+	4,  // 34: glider.v2.Workload.metadata:type_name -> glider.v2.Metadata
+	18, // 35: glider.v2.Workload.spec:type_name -> glider.v2.WorkloadSpec
+	20, // 36: glider.v2.Workload.status:type_name -> glider.v2.WorkloadStatus
+	12, // 37: glider.v2.WorkloadSpec.template:type_name -> glider.v2.TaskSpec
+	19, // 38: glider.v2.WorkloadSpec.rollout:type_name -> glider.v2.RolloutStrategy
+	35, // 39: glider.v2.RolloutStrategy.progress_deadline:type_name -> google.protobuf.Duration
+	34, // 40: glider.v2.WorkloadStatus.rollout_started_time:type_name -> google.protobuf.Timestamp
+	34, // 41: glider.v2.WorkloadStatus.last_progress_time:type_name -> google.protobuf.Timestamp
+	4,  // 42: glider.v2.Service.metadata:type_name -> glider.v2.Metadata
+	22, // 43: glider.v2.Service.spec:type_name -> glider.v2.ServiceSpec
+	24, // 44: glider.v2.Service.status:type_name -> glider.v2.ServiceStatus
+	31, // 45: glider.v2.ServiceSpec.selector:type_name -> glider.v2.ServiceSpec.SelectorEntry
+	23, // 46: glider.v2.ServiceStatus.endpoints:type_name -> glider.v2.ServiceEndpoint
+	34, // 47: glider.v2.ServiceStatus.update_time:type_name -> google.protobuf.Timestamp
+	4,  // 48: glider.v2.Secret.metadata:type_name -> glider.v2.Metadata
+	32, // 49: glider.v2.Secret.data:type_name -> glider.v2.Secret.DataEntry
+	4,  // 50: glider.v2.Event.metadata:type_name -> glider.v2.Metadata
+	34, // 51: glider.v2.Event.time:type_name -> google.protobuf.Timestamp
+	33, // 52: glider.v2.Event.attributes:type_name -> glider.v2.Event.AttributesEntry
+	4,  // 53: glider.v2.Assignment.metadata:type_name -> glider.v2.Metadata
+	5,  // 54: glider.v2.Assignment.resources:type_name -> glider.v2.Resources
+	1,  // 55: glider.v2.Assignment.restart_policy:type_name -> glider.v2.RestartPolicy
+	10, // 56: glider.v2.Assignment.health:type_name -> glider.v2.HealthSpec
+	14, // 57: glider.v2.Assignment.secrets:type_name -> glider.v2.SecretEnvReference
+	15, // 58: glider.v2.Assignment.network_policy:type_name -> glider.v2.NetworkPolicy
+	34, // 59: glider.v2.Assignment.create_time:type_name -> google.protobuf.Timestamp
+	60, // [60:60] is the sub-list for method output_type
+	60, // [60:60] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_glider_v2_resources_proto_init() }
@@ -2496,6 +2539,7 @@ func file_glider_v2_resources_proto_init() {
 	if File_glider_v2_resources_proto != nil {
 		return
 	}
+	file_glider_v2_resources_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

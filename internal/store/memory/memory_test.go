@@ -41,3 +41,32 @@ func TestConcurrentBindHasOneWinner(t *testing.T) {
 		t.Fatalf("assignments=%d", len(assignments))
 	}
 }
+
+func TestTaskLifecycleReleasesReservation(t *testing.T) {
+	s := New()
+	task := s.PutTask(api.Task{Metadata: api.Metadata{ID: "t"}, Status: api.TaskStatus{Phase: api.TaskPending}, Spec: api.TaskSpec{Resources: api.Resources{CPUMilli: 500}}})
+	node := s.PutNode(api.Node{Metadata: api.Metadata{ID: "a"}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}})
+	a, err := s.Bind(context.Background(), store.BindRequest{TaskID: task.Metadata.ID, TaskRevision: task.Metadata.Revision, NodeID: node.Metadata.ID, NodeRevision: node.Metadata.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReportTaskRunning(context.Background(), task.Metadata.ID, a.Generation); err != nil {
+		t.Fatal(err)
+	}
+	code := 0
+	if err := s.CompleteTask(context.Background(), task.Metadata.ID, a.Generation, &code, ""); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.GetTask(context.Background(), task.Metadata.ID)
+	if stored.Status.Phase != api.TaskTerminated || stored.Status.ExitCode == nil || *stored.Status.ExitCode != 0 {
+		t.Fatalf("task=%+v", stored)
+	}
+	nodes, _ := s.ListNodes(context.Background())
+	if nodes[0].Status.Reserved.CPUMilli != 0 {
+		t.Fatalf("reservation=%d", nodes[0].Status.Reserved.CPUMilli)
+	}
+	assignments, _ := s.ListAssignments(context.Background())
+	if len(assignments) != 0 {
+		t.Fatalf("assignments=%d", len(assignments))
+	}
+}

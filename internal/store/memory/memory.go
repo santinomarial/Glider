@@ -95,6 +95,11 @@ func (s *Store) Bind(_ context.Context, r store.BindRequest) (api.Assignment, er
 	t.Status.Phase = api.TaskScheduled
 	t.Status.NodeID = n.Metadata.ID
 	t.Status.AssignmentGeneration = gen
+	t.Status.Ready = false
+	t.Status.StartedAt = time.Time{}
+	t.Status.FinishedAt = time.Time{}
+	t.Status.ExitCode = nil
+	t.Status.TerminationReason = ""
 	t.Metadata.Generation = gen
 	t.Metadata.Revision = s.next()
 	n.Status.Reserved = n.Status.Reserved.Add(t.Spec.Resources)
@@ -104,4 +109,108 @@ func (s *Store) Bind(_ context.Context, r store.BindRequest) (api.Assignment, er
 	s.nodes[n.Metadata.ID] = n
 	s.assignments[t.Metadata.ID] = a
 	return a, nil
+}
+
+func (s *Store) ReportTaskRunning(_ context.Context, taskID string, generation int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	a, ok := s.assignments[taskID]
+	if !ok || a.Generation != generation || t.Status.AssignmentGeneration != generation {
+		return store.ErrConflict
+	}
+	if t.Status.Phase == api.TaskRunning {
+		return nil
+	}
+	if t.Status.Phase != api.TaskScheduled {
+		return store.ErrConflict
+	}
+	t.Status.Phase = api.TaskRunning
+	if t.Status.StartedAt.IsZero() {
+		t.Status.StartedAt = time.Now().UTC()
+	}
+	t.Metadata.Revision = s.next()
+	s.tasks[taskID] = t
+	return nil
+}
+
+func (s *Store) CompleteTask(_ context.Context, taskID string, generation int64, exitCode *int, reason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if t.Status.AssignmentGeneration != generation {
+		return store.ErrConflict
+	}
+	if t.Status.Phase == api.TaskTerminated {
+		return nil
+	}
+	a, ok := s.assignments[taskID]
+	if !ok || a.Generation != generation {
+		return store.ErrConflict
+	}
+	n, ok := s.nodes[a.NodeID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	n.Status.Reserved = n.Status.Reserved.Sub(a.Resources)
+	if n.Status.Reserved.CPUMilli < 0 || n.Status.Reserved.MemoryBytes < 0 {
+		return fmt.Errorf("corrupt negative node reservation")
+	}
+	t.Status.Phase = api.TaskTerminated
+	t.Status.Address = ""
+	t.Status.Ready = false
+	t.Status.FinishedAt = time.Now().UTC()
+	if exitCode != nil {
+		code := *exitCode
+		t.Status.ExitCode = &code
+	}
+	t.Status.TerminationReason = reason
+	t.Metadata.Revision = s.next()
+	n.Metadata.Revision = s.next()
+	s.tasks[taskID] = t
+	s.nodes[a.NodeID] = n
+	delete(s.assignments, taskID)
+	return nil
+}
+
+func (s *Store) RestartTask(_ context.Context, taskID string, generation int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	a, ok := s.assignments[taskID]
+	if !ok || a.Generation != generation || t.Status.AssignmentGeneration != generation {
+		return store.ErrConflict
+	}
+	n, ok := s.nodes[a.NodeID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	n.Status.Reserved = n.Status.Reserved.Sub(a.Resources)
+	if n.Status.Reserved.CPUMilli < 0 || n.Status.Reserved.MemoryBytes < 0 {
+		return fmt.Errorf("corrupt negative node reservation")
+	}
+	t.Status.Phase = api.TaskPending
+	t.Status.NodeID = ""
+	t.Status.Address = ""
+	t.Status.Ready = false
+	t.Status.RestartCount++
+	t.Status.StartedAt = time.Time{}
+	t.Status.FinishedAt = time.Time{}
+	t.Status.ExitCode = nil
+	t.Status.TerminationReason = ""
+	t.Metadata.Revision = s.next()
+	n.Metadata.Revision = s.next()
+	s.tasks[taskID] = t
+	s.nodes[a.NodeID] = n
+	delete(s.assignments, taskID)
+	return nil
 }

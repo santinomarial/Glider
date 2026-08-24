@@ -185,6 +185,10 @@ type TaskStatus struct {
 	Address              string    `json:"address,omitempty"`
 	Ready                bool      `json:"ready"`
 	RestartCount         int       `json:"restart_count,omitempty"`
+	StartedAt            time.Time `json:"started_at,omitempty"`
+	FinishedAt           time.Time `json:"finished_at,omitempty"`
+	ExitCode             *int      `json:"exit_code,omitempty"`
+	TerminationReason    string    `json:"termination_reason,omitempty"`
 	LastHealthTransition time.Time `json:"last_health_transition,omitempty"`
 }
 

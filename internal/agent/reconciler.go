@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/santinomarial/glider/internal/api"
+	"github.com/santinomarial/glider/internal/health"
 )
 
 type ObservedPhase string
@@ -21,18 +22,25 @@ type ObservedPhase string
 const (
 	ObservedAbsent  ObservedPhase = "ABSENT"
 	ObservedRunning ObservedPhase = "RUNNING"
+	ObservedExited  ObservedPhase = "EXITED"
 	ObservedFailed  ObservedPhase = "FAILED"
 )
 
 type Observed struct {
 	Phase       ObservedPhase `json:"phase"`
 	ContainerID string        `json:"container_id,omitempty"`
+	ExitCode    *int          `json:"exit_code,omitempty"`
 	Error       string        `json:"error,omitempty"`
 }
 type Driver interface {
 	Ensure(context.Context, api.Assignment) (Observed, error)
 	Remove(context.Context, api.Assignment, Observed) error
 	Observe(context.Context, api.Assignment, Observed) (Observed, error)
+}
+type StatusReporter interface {
+	ReportTaskRunning(context.Context, string, int64) error
+	CompleteTask(context.Context, string, int64, *int, string) error
+	RestartTask(context.Context, string, int64) error
 }
 type record struct {
 	Version    int            `json:"version"`
@@ -43,6 +51,7 @@ type record struct {
 type Reconciler struct {
 	root   string
 	driver Driver
+	status StatusReporter
 	mu     sync.Mutex
 }
 
@@ -51,7 +60,7 @@ func containerID(a api.Assignment) string {
 	return fmt.Sprintf("%x-g%d", sum[:10], a.Generation)
 }
 
-func New(root string, driver Driver) (*Reconciler, error) {
+func New(root string, driver Driver, reporters ...StatusReporter) (*Reconciler, error) {
 	if root == "" || !filepath.IsAbs(root) {
 		return nil, errors.New("agent state root must be absolute")
 	}
@@ -61,7 +70,17 @@ func New(root string, driver Driver) (*Reconciler, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &Reconciler{root: root, driver: driver}, nil
+	if len(reporters) > 1 {
+		return nil, errors.New("agent accepts at most one status reporter")
+	}
+	var status StatusReporter
+	if len(reporters) == 1 {
+		if reporters[0] == nil {
+			return nil, errors.New("agent status reporter is nil")
+		}
+		status = reporters[0]
+	}
+	return &Reconciler{root: root, driver: driver, status: status}, nil
 }
 
 // Reconcile is a full level-triggered pass. Event watches only wake this
@@ -115,6 +134,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, desired []api.Assignment) er
 			if err == nil && observed.Phase == ObservedRunning {
 				rec.Observed = observed
 				_ = r.save(taskID, rec)
+				if reportErr := r.reportRunning(ctx, a); reportErr != nil {
+					errs = append(errs, reportErr)
+				}
+				continue
+			}
+			if err == nil && r.status != nil {
+				rec.Observed = observed
+				if saveErr := r.save(taskID, rec); saveErr != nil {
+					errs = append(errs, saveErr)
+				}
+				if terminalErr := r.reportTerminal(ctx, a, observed); terminalErr != nil {
+					errs = append(errs, terminalErr)
+				}
 				continue
 			}
 		}
@@ -128,8 +160,53 @@ func (r *Reconciler) Reconcile(ctx context.Context, desired []api.Assignment) er
 		if saveErr := r.save(taskID, rec); saveErr != nil {
 			errs = append(errs, saveErr)
 		}
+		if observed.Phase == ObservedRunning {
+			if reportErr := r.reportRunning(ctx, a); reportErr != nil {
+				errs = append(errs, reportErr)
+			}
+		} else if r.status != nil {
+			if terminalErr := r.reportTerminal(ctx, a, observed); terminalErr != nil {
+				errs = append(errs, terminalErr)
+			}
+		}
 	}
 	return errors.Join(errs...)
+}
+
+func (r *Reconciler) reportRunning(ctx context.Context, a api.Assignment) error {
+	if r.status == nil {
+		return nil
+	}
+	if err := r.status.ReportTaskRunning(ctx, a.TaskID, a.Generation); err != nil {
+		return fmt.Errorf("report %s generation %d running: %w", a.TaskID, a.Generation, err)
+	}
+	return nil
+}
+
+func (r *Reconciler) reportTerminal(ctx context.Context, a api.Assignment, observed Observed) error {
+	exitCode := observed.ExitCode
+	exitWasRecorded := exitCode != nil
+	if exitCode == nil {
+		code := 1
+		exitCode = &code
+	}
+	code := *exitCode
+	if health.ShouldRestart(a.RestartPolicy, code, false) {
+		if err := r.status.RestartTask(ctx, a.TaskID, a.Generation); err != nil {
+			return fmt.Errorf("restart %s generation %d: %w", a.TaskID, a.Generation, err)
+		}
+		return nil
+	}
+	reason := observed.Error
+	if reason == "" && !exitWasRecorded {
+		reason = "container disappeared without a recorded exit"
+	} else if reason == "" && code != 0 {
+		reason = fmt.Sprintf("workload exited with code %d", code)
+	}
+	if err := r.status.CompleteTask(ctx, a.TaskID, a.Generation, exitCode, reason); err != nil {
+		return fmt.Errorf("complete %s generation %d: %w", a.TaskID, a.Generation, err)
+	}
+	return nil
 }
 
 func (r *Reconciler) load() (map[string]record, error) {

@@ -53,6 +53,16 @@ Restart delays use capped exponential backoff. Task status records readiness,
 restart count, and the last health transition so controller behavior is
 observable and reconstructible.
 
+The node reconciler is also the authoritative observer for process lifecycle.
+It promotes only its current assignment generation from `SCHEDULED` to
+`RUNNING`, including a durable start timestamp. A durable runtime exit is
+evaluated against `Never`, `OnFailure`, or `Always`: restartable results revoke
+the exact assignment and return the task to `PENDING`; terminal results record
+the exit code, reason, and finish timestamp while atomically deleting the
+assignment and releasing the node reservation. Every report compares both the
+task and assignment revisions, so a superseded node cannot revive or complete
+newer work.
+
 ## Verification boundaries
 
 Embedded-etcd tests race node ownership, concurrent scheduling, transactional

@@ -153,7 +153,7 @@ func main() {
 		}()
 		daemonLog.Info("node operations listening", map[string]any{"address": listener.Addr().String(), "node_id": nodeID})
 	}
-	reconciler, err := agent.New(filepath.Join(dataRoot, "agent", "assignments"), driver)
+	reconciler, err := agent.New(filepath.Join(dataRoot, "agent", "assignments"), driver, store)
 	if err != nil {
 		fatal(err)
 	}

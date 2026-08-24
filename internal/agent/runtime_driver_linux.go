@@ -384,7 +384,10 @@ func (d *RuntimeDriver) observeID(id string) (Observed, error) {
 		}
 	}
 	if rec.Phase == processstate.Failed {
-		return Observed{Phase: ObservedFailed, ContainerID: id, Error: rec.Error}, nil
+		return Observed{Phase: ObservedFailed, ContainerID: id, ExitCode: rec.ExitCode, Error: rec.Error}, nil
+	}
+	if rec.Phase == processstate.Exited {
+		return Observed{Phase: ObservedExited, ContainerID: id, ExitCode: rec.ExitCode}, nil
 	}
 	return Observed{Phase: ObservedAbsent, ContainerID: id}, nil
 }

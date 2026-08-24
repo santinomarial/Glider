@@ -669,6 +669,131 @@ func (s *Store) ReportTaskEndpoint(ctx context.Context, taskID string, generatio
 	return nil
 }
 
+// ReportTaskRunning promotes only the assignment generation the reporting
+// agent currently owns. Comparing the assignment revision closes the race
+// where a stale agent reports RUNNING after its assignment was revoked.
+func (s *Store) ReportTaskRunning(ctx context.Context, taskID string, generation int64) error {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status.AssignmentGeneration != generation {
+		return storeapi.ErrConflict
+	}
+	if task.Status.Phase != api.TaskScheduled && task.Status.Phase != api.TaskRunning {
+		return storeapi.ErrConflict
+	}
+	assignmentKV, err := getOne(ctx, s.client, s.key("assignments", taskID))
+	if err != nil {
+		return err
+	}
+	var assignment api.Assignment
+	if err := json.Unmarshal(assignmentKV.Value, &assignment); err != nil {
+		return err
+	}
+	if assignment.Generation != generation || assignment.NodeID != task.Status.NodeID {
+		return storeapi.ErrConflict
+	}
+	if task.Status.Phase == api.TaskRunning {
+		return nil
+	}
+	taskRevision := task.Metadata.Revision
+	task.Metadata.Revision = 0
+	task.Status.Phase = api.TaskRunning
+	if task.Status.StartedAt.IsZero() {
+		task.Status.StartedAt = time.Now().UTC()
+	}
+	task.Status.FinishedAt = time.Time{}
+	task.Status.ExitCode = nil
+	task.Status.TerminationReason = ""
+	data, _ := json.Marshal(task)
+	resp, err := s.client.Txn(ctx).If(
+		clientv3.Compare(clientv3.ModRevision(s.key("tasks", taskID)), "=", taskRevision),
+		clientv3.Compare(clientv3.ModRevision(s.key("assignments", taskID)), "=", assignmentKV.ModRevision),
+	).Then(clientv3.OpPut(s.key("tasks", taskID), string(data))).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		return storeapi.ErrConflict
+	}
+	return nil
+}
+
+// CompleteTask records a terminal result, deletes the exact assignment, and
+// releases its reservation in one transaction. It is safe to retry after an
+// ambiguous etcd response and rejects reports from superseded generations.
+func (s *Store) CompleteTask(ctx context.Context, taskID string, generation int64, exitCode *int, reason string) error {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.Status.AssignmentGeneration != generation {
+		return storeapi.ErrConflict
+	}
+	if task.Status.Phase == api.TaskTerminated {
+		return nil
+	}
+	assignmentKV, err := getOne(ctx, s.client, s.key("assignments", taskID))
+	if err != nil {
+		return err
+	}
+	var assignment api.Assignment
+	if err := json.Unmarshal(assignmentKV.Value, &assignment); err != nil {
+		return err
+	}
+	if assignment.Generation != generation || assignment.NodeID != task.Status.NodeID {
+		return storeapi.ErrConflict
+	}
+	nodeKV, err := getOne(ctx, s.client, s.key("nodes", assignment.NodeID))
+	if err != nil {
+		return err
+	}
+	var node api.Node
+	if err := json.Unmarshal(nodeKV.Value, &node); err != nil {
+		return err
+	}
+	node.Status.Reserved = node.Status.Reserved.Sub(assignment.Resources)
+	if node.Status.Reserved.CPUMilli < 0 || node.Status.Reserved.MemoryBytes < 0 {
+		return errors.New("corrupt negative node reservation")
+	}
+	taskRevision := task.Metadata.Revision
+	task.Metadata.Revision = 0
+	task.Status.Phase = api.TaskTerminated
+	task.Status.Address = ""
+	task.Status.Ready = false
+	task.Status.FinishedAt = time.Now().UTC()
+	task.Status.ExitCode = cloneInt(exitCode)
+	task.Status.TerminationReason = reason
+	node.Metadata.Revision = 0
+	taskData, _ := json.Marshal(task)
+	nodeData, _ := json.Marshal(node)
+	resp, err := s.client.Txn(ctx).If(
+		clientv3.Compare(clientv3.ModRevision(s.key("tasks", taskID)), "=", taskRevision),
+		clientv3.Compare(clientv3.ModRevision(s.key("assignments", taskID)), "=", assignmentKV.ModRevision),
+		clientv3.Compare(clientv3.ModRevision(s.key("nodes", assignment.NodeID)), "=", nodeKV.ModRevision),
+	).Then(
+		clientv3.OpPut(s.key("tasks", taskID), string(taskData)),
+		clientv3.OpPut(s.key("nodes", assignment.NodeID), string(nodeData)),
+		clientv3.OpDelete(s.key("assignments", taskID)),
+	).Commit()
+	if err != nil {
+		return err
+	}
+	if !resp.Succeeded {
+		return storeapi.ErrConflict
+	}
+	return nil
+}
+
+func cloneInt(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
 // RestartTask revokes exactly the observed generation and returns the task to
 // PENDING. A stale health result can never revoke a newer assignment.
 func (s *Store) RestartTask(ctx context.Context, taskID string, generation int64) error {
@@ -709,6 +834,10 @@ func (s *Store) RestartTask(ctx context.Context, taskID string, generation int64
 	task.Status.Address = ""
 	task.Status.Ready = false
 	task.Status.RestartCount++
+	task.Status.StartedAt = time.Time{}
+	task.Status.FinishedAt = time.Time{}
+	task.Status.ExitCode = nil
+	task.Status.TerminationReason = ""
 	node.Metadata.Revision = 0
 	taskData, _ := json.Marshal(task)
 	nodeData, _ := json.Marshal(node)
@@ -818,6 +947,11 @@ func (s *Store) Bind(ctx context.Context, r storeapi.BindRequest) (api.Assignmen
 	task.Status.Phase = api.TaskScheduled
 	task.Status.NodeID = node.Metadata.ID
 	task.Status.AssignmentGeneration = gen
+	task.Status.Ready = false
+	task.Status.StartedAt = time.Time{}
+	task.Status.FinishedAt = time.Time{}
+	task.Status.ExitCode = nil
+	task.Status.TerminationReason = ""
 	task.Metadata.Generation = gen
 	task.Metadata.Revision = 0
 	node.Status.Reserved = node.Status.Reserved.Add(task.Spec.Resources)

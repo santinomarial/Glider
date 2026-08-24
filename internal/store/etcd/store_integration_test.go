@@ -295,6 +295,47 @@ func TestRemoveNodeRequiresDrainAndAbsentLease(t *testing.T) {
 	}
 }
 
+func TestTaskLifecycleReportsGenerationAndCompletesAtomically(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "lifecycle-cluster")
+	ctx := context.Background()
+	task, _ := s.PutTask(ctx, api.Task{Metadata: api.Metadata{ID: "task"}, Spec: api.TaskSpec{Resources: api.Resources{CPUMilli: 400}}, Status: api.TaskStatus{Phase: api.TaskPending}}, 0)
+	node, _ := s.PutNode(ctx, readyNode("node"), 0)
+	a, err := s.Bind(ctx, storeapi.BindRequest{TaskID: task.Metadata.ID, TaskRevision: task.Metadata.Revision, NodeID: node.Metadata.ID, NodeRevision: node.Metadata.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReportTaskRunning(ctx, task.Metadata.ID, a.Generation); err != nil {
+		t.Fatal(err)
+	}
+	running, _ := s.GetTask(ctx, task.Metadata.ID)
+	if running.Status.Phase != api.TaskRunning || running.Status.StartedAt.IsZero() {
+		t.Fatalf("running=%+v", running)
+	}
+	if err := s.ReportTaskRunning(ctx, task.Metadata.ID, a.Generation-1); !errors.Is(err, storeapi.ErrConflict) {
+		t.Fatalf("stale running report: %v", err)
+	}
+	code := 23
+	if err := s.CompleteTask(ctx, task.Metadata.ID, a.Generation, &code, "workload failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteTask(ctx, task.Metadata.ID, a.Generation, &code, "workload failed"); err != nil {
+		t.Fatalf("completion retry: %v", err)
+	}
+	completed, _ := s.GetTask(ctx, task.Metadata.ID)
+	if completed.Status.Phase != api.TaskTerminated || completed.Status.ExitCode == nil || *completed.Status.ExitCode != code || completed.Status.FinishedAt.IsZero() {
+		t.Fatalf("completed=%+v", completed)
+	}
+	nodes, _ := s.ListNodes(ctx)
+	if nodes[0].Status.Reserved.CPUMilli != 0 {
+		t.Fatalf("reservation=%d", nodes[0].Status.Reserved.CPUMilli)
+	}
+	assignments, _ := s.ListAssignments(ctx)
+	if len(assignments) != 0 {
+		t.Fatalf("assignments=%d", len(assignments))
+	}
+}
+
 func readyNode(id string) api.Node {
 	return api.Node{Metadata: api.Metadata{ID: id}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}}
 }
