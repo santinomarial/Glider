@@ -131,6 +131,8 @@ message TaskStatus {
   google.protobuf.Timestamp finish_time = 9;
   optional int32 exit_code = 10;
   string termination_reason = 11;
+  google.protobuf.Timestamp restart_not_before_time = 12;
+  uint32 restart_backoff_attempt = 13;
 }
 
 message SecretEnvReference {

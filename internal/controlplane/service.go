@@ -493,6 +493,8 @@ func mapError(err error) error {
 		return status.Error(codes.ResourceExhausted, err.Error())
 	case errors.Is(err, storeapi.ErrNodeActive):
 		return status.Error(codes.FailedPrecondition, err.Error())
+	case errors.Is(err, storeapi.ErrRestartBackoff):
+		return status.Error(codes.Unavailable, err.Error())
 	default:
 		return status.Error(codes.Internal, err.Error())
 	}

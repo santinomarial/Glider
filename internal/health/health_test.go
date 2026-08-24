@@ -37,3 +37,15 @@ func TestRestartPolicyAndBoundedBackoff(t *testing.T) {
 		t.Fatalf("backoff=%s", got)
 	}
 }
+
+func TestNextRestartResetsBackoffAfterStableRun(t *testing.T) {
+	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+	attempt, deadline := NextRestart(6, now.Add(-StableRunBackoffReset), now)
+	if attempt != 1 || !deadline.Equal(now.Add(time.Second)) {
+		t.Fatalf("stable reset: attempt=%d deadline=%s", attempt, deadline)
+	}
+	attempt, deadline = NextRestart(2, now.Add(-time.Minute), now)
+	if attempt != 3 || !deadline.Equal(now.Add(4*time.Second)) {
+		t.Fatalf("crash loop: attempt=%d deadline=%s", attempt, deadline)
+	}
+}

@@ -16,6 +16,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/santinomarial/glider/internal/api"
+	"github.com/santinomarial/glider/internal/health"
 	secretapi "github.com/santinomarial/glider/internal/secret"
 	storeapi "github.com/santinomarial/glider/internal/store"
 )
@@ -765,6 +766,7 @@ func (s *Store) CompleteTask(ctx context.Context, taskID string, generation int6
 	task.Status.FinishedAt = time.Now().UTC()
 	task.Status.ExitCode = cloneInt(exitCode)
 	task.Status.TerminationReason = reason
+	task.Status.RestartNotBefore = time.Time{}
 	node.Metadata.Revision = 0
 	taskData, _ := json.Marshal(task)
 	nodeData, _ := json.Marshal(node)
@@ -833,7 +835,9 @@ func (s *Store) RestartTask(ctx context.Context, taskID string, generation int64
 	task.Status.NodeID = ""
 	task.Status.Address = ""
 	task.Status.Ready = false
+	now := time.Now().UTC()
 	task.Status.RestartCount++
+	task.Status.RestartBackoffAttempt, task.Status.RestartNotBefore = health.NextRestart(task.Status.RestartBackoffAttempt, task.Status.StartedAt, now)
 	task.Status.StartedAt = time.Time{}
 	task.Status.FinishedAt = time.Time{}
 	task.Status.ExitCode = nil
@@ -939,6 +943,9 @@ func (s *Store) Bind(ctx context.Context, r storeapi.BindRequest) (api.Assignmen
 	if task.Status.Phase != api.TaskPending {
 		return api.Assignment{}, storeapi.ErrAlreadyAssigned
 	}
+	if !task.Status.RestartNotBefore.IsZero() && time.Now().UTC().Before(task.Status.RestartNotBefore) {
+		return api.Assignment{}, storeapi.ErrRestartBackoff
+	}
 	if node.Status.Phase != api.NodeReady || node.Spec.Unschedulable || !node.Available().Fits(task.Spec.Resources) {
 		return api.Assignment{}, storeapi.ErrInsufficientCapacity
 	}
@@ -952,6 +959,7 @@ func (s *Store) Bind(ctx context.Context, r storeapi.BindRequest) (api.Assignmen
 	task.Status.FinishedAt = time.Time{}
 	task.Status.ExitCode = nil
 	task.Status.TerminationReason = ""
+	task.Status.RestartNotBefore = time.Time{}
 	task.Metadata.Generation = gen
 	task.Metadata.Revision = 0
 	node.Status.Reserved = node.Status.Reserved.Add(task.Spec.Resources)

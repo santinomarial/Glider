@@ -70,3 +70,22 @@ func TestTaskLifecycleReleasesReservation(t *testing.T) {
 		t.Fatalf("assignments=%d", len(assignments))
 	}
 }
+
+func TestRestartPersistsBackoff(t *testing.T) {
+	s := New()
+	task := s.PutTask(api.Task{Metadata: api.Metadata{ID: "t"}, Status: api.TaskStatus{Phase: api.TaskPending}, Spec: api.TaskSpec{Resources: api.Resources{CPUMilli: 500}}})
+	node := s.PutNode(api.Node{Metadata: api.Metadata{ID: "a"}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}})
+	a, err := s.Bind(context.Background(), store.BindRequest{TaskID: task.Metadata.ID, TaskRevision: task.Metadata.Revision, NodeID: node.Metadata.ID, NodeRevision: node.Metadata.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RestartTask(context.Background(), task.Metadata.ID, a.Generation); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ := s.GetTask(context.Background(), task.Metadata.ID)
+	nodes, _ := s.ListNodes(context.Background())
+	_, err = s.Bind(context.Background(), store.BindRequest{TaskID: task.Metadata.ID, TaskRevision: pending.Metadata.Revision, NodeID: nodes[0].Metadata.ID, NodeRevision: nodes[0].Metadata.Revision})
+	if !errors.Is(err, store.ErrRestartBackoff) || pending.Status.RestartNotBefore.IsZero() {
+		t.Fatalf("backoff=%s bind=%v", pending.Status.RestartNotBefore, err)
+	}
+}

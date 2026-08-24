@@ -82,6 +82,8 @@ type Result struct {
 	ReadinessChanged bool
 }
 
+const StableRunBackoffReset = 10 * time.Minute
+
 func Evaluate(state State, kind string, success bool, probe api.Probe) Result {
 	failure := probe.FailureThreshold
 	if failure <= 0 {
@@ -145,6 +147,19 @@ func RestartBackoff(restarts int, base, maximum time.Duration) time.Duration {
 		return maximum
 	}
 	return delay
+}
+
+// NextRestart preserves the independently tracked total restart count while
+// resetting only the consecutive crash-loop attempt after a stable run.
+func NextRestart(attempt int, startedAt, now time.Time) (int, time.Time) {
+	if attempt < 0 {
+		attempt = 0
+	}
+	if !startedAt.IsZero() && !now.Before(startedAt) && now.Sub(startedAt) >= StableRunBackoffReset {
+		attempt = 0
+	}
+	delay := RestartBackoff(attempt, time.Second, time.Minute)
+	return attempt + 1, now.Add(delay)
 }
 func ShouldRestart(policy api.RestartPolicy, exitCode int, livenessFailed bool) bool {
 	if livenessFailed {

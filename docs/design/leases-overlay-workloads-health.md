@@ -49,9 +49,15 @@ success/failure thresholds and a timeout. HTTP accepts 2xx/3xx, TCP requires a
 successful connection, and exec probes require an explicitly injected
 container-namespace executor—Glider never accidentally runs them on the host.
 
-Restart delays use capped exponential backoff. Task status records readiness,
-restart count, and the last health transition so controller behavior is
-observable and reconstructible.
+Restart delays use capped exponential backoff. The restart count and absolute
+retry deadline are committed with the assignment revocation, and the store
+rejects early binds, so controller or agent restarts cannot erase the delay.
+The cumulative restart count remains monotonic for operators; a separate
+consecutive backoff attempt resets after ten minutes of stable execution.
+Probe initial delays are measured from the task's durable start timestamp;
+startup, liveness, and readiness then run on independent configured periods.
+Task status records readiness and the last health transition so controller
+behavior is observable and reconstructible.
 
 The node reconciler is also the authoritative observer for process lifecycle.
 It promotes only its current assignment generation from `SCHEDULED` to

@@ -14,6 +14,7 @@ var (
 	ErrNotFound             = errors.New("resource not found")
 	ErrAlreadyAssigned      = errors.New("task already assigned")
 	ErrInsufficientCapacity = errors.New("node reservation no longer fits")
+	ErrRestartBackoff       = errors.New("task restart backoff is active")
 	ErrQuotaExceeded        = errors.New("cluster quota exceeded")
 	ErrNodeActive           = errors.New("node is active or not safely drained")
 )

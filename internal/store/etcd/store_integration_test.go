@@ -336,6 +336,44 @@ func TestTaskLifecycleReportsGenerationAndCompletesAtomically(t *testing.T) {
 	}
 }
 
+func TestRestartBackoffPersistsAndBlocksBinding(t *testing.T) {
+	client := startEtcd(t)
+	s, _ := New(client, "restart-backoff-cluster")
+	ctx := context.Background()
+	task, _ := s.PutTask(ctx, api.Task{Metadata: api.Metadata{ID: "task"}, Spec: api.TaskSpec{Resources: api.Resources{CPUMilli: 400}}, Status: api.TaskStatus{Phase: api.TaskPending}}, 0)
+	node, _ := s.PutNode(ctx, readyNode("node"), 0)
+	a, err := s.Bind(ctx, storeapi.BindRequest{TaskID: task.Metadata.ID, TaskRevision: task.Metadata.Revision, NodeID: node.Metadata.ID, NodeRevision: node.Metadata.Revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now().UTC()
+	if err := s.RestartTask(ctx, task.Metadata.ID, a.Generation); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ := s.GetTask(ctx, task.Metadata.ID)
+	if pending.Status.Phase != api.TaskPending || pending.Status.RestartCount != 1 || !pending.Status.RestartNotBefore.After(before) {
+		t.Fatalf("pending restart=%+v", pending.Status)
+	}
+	nodes, _ := s.ListNodes(ctx)
+	request := storeapi.BindRequest{TaskID: task.Metadata.ID, TaskRevision: pending.Metadata.Revision, NodeID: nodes[0].Metadata.ID, NodeRevision: nodes[0].Metadata.Revision}
+	if _, err := s.Bind(ctx, request); !errors.Is(err, storeapi.ErrRestartBackoff) {
+		t.Fatalf("binding during backoff: %v", err)
+	}
+	pending.Status.RestartNotBefore = time.Now().UTC().Add(-time.Second)
+	pending, err = s.PutTask(ctx, pending, pending.Metadata.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.TaskRevision = pending.Metadata.Revision
+	second, err := s.Bind(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Generation <= a.Generation {
+		t.Fatalf("generation did not advance: %d -> %d", a.Generation, second.Generation)
+	}
+}
+
 func readyNode(id string) api.Node {
 	return api.Node{Metadata: api.Metadata{ID: id}, Spec: api.NodeSpec{Capacity: api.Resources{CPUMilli: 1000}}, Status: api.NodeStatus{Phase: api.NodeReady}}
 }

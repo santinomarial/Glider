@@ -179,17 +179,19 @@ type WorkloadStatus struct {
 	RolloutMessage     string    `json:"rollout_message,omitempty"`
 }
 type TaskStatus struct {
-	Phase                TaskPhase `json:"phase"`
-	AssignmentGeneration int64     `json:"assignment_generation,omitempty"`
-	NodeID               string    `json:"node_id,omitempty"`
-	Address              string    `json:"address,omitempty"`
-	Ready                bool      `json:"ready"`
-	RestartCount         int       `json:"restart_count,omitempty"`
-	StartedAt            time.Time `json:"started_at,omitempty"`
-	FinishedAt           time.Time `json:"finished_at,omitempty"`
-	ExitCode             *int      `json:"exit_code,omitempty"`
-	TerminationReason    string    `json:"termination_reason,omitempty"`
-	LastHealthTransition time.Time `json:"last_health_transition,omitempty"`
+	Phase                 TaskPhase `json:"phase"`
+	AssignmentGeneration  int64     `json:"assignment_generation,omitempty"`
+	NodeID                string    `json:"node_id,omitempty"`
+	Address               string    `json:"address,omitempty"`
+	Ready                 bool      `json:"ready"`
+	RestartCount          int       `json:"restart_count,omitempty"`
+	RestartBackoffAttempt int       `json:"restart_backoff_attempt,omitempty"`
+	StartedAt             time.Time `json:"started_at,omitempty"`
+	FinishedAt            time.Time `json:"finished_at,omitempty"`
+	ExitCode              *int      `json:"exit_code,omitempty"`
+	TerminationReason     string    `json:"termination_reason,omitempty"`
+	RestartNotBefore      time.Time `json:"restart_not_before,omitempty"`
+	LastHealthTransition  time.Time `json:"last_health_transition,omitempty"`
 }
 
 type Service struct {

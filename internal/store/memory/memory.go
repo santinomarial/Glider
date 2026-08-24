@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/santinomarial/glider/internal/api"
+	"github.com/santinomarial/glider/internal/health"
 	"github.com/santinomarial/glider/internal/store"
 )
 
@@ -87,6 +88,9 @@ func (s *Store) Bind(_ context.Context, r store.BindRequest) (api.Assignment, er
 	if t.Status.Phase != api.TaskPending {
 		return api.Assignment{}, fmt.Errorf("%w: task phase %s", store.ErrConflict, t.Status.Phase)
 	}
+	if !t.Status.RestartNotBefore.IsZero() && time.Now().UTC().Before(t.Status.RestartNotBefore) {
+		return api.Assignment{}, store.ErrRestartBackoff
+	}
 	if n.Status.Phase != api.NodeReady || n.Spec.Unschedulable || !n.Available().Fits(t.Spec.Resources) {
 		return api.Assignment{}, store.ErrInsufficientCapacity
 	}
@@ -100,6 +104,7 @@ func (s *Store) Bind(_ context.Context, r store.BindRequest) (api.Assignment, er
 	t.Status.FinishedAt = time.Time{}
 	t.Status.ExitCode = nil
 	t.Status.TerminationReason = ""
+	t.Status.RestartNotBefore = time.Time{}
 	t.Metadata.Generation = gen
 	t.Metadata.Revision = s.next()
 	n.Status.Reserved = n.Status.Reserved.Add(t.Spec.Resources)
@@ -171,6 +176,7 @@ func (s *Store) CompleteTask(_ context.Context, taskID string, generation int64,
 		t.Status.ExitCode = &code
 	}
 	t.Status.TerminationReason = reason
+	t.Status.RestartNotBefore = time.Time{}
 	t.Metadata.Revision = s.next()
 	n.Metadata.Revision = s.next()
 	s.tasks[taskID] = t
@@ -202,7 +208,9 @@ func (s *Store) RestartTask(_ context.Context, taskID string, generation int64) 
 	t.Status.NodeID = ""
 	t.Status.Address = ""
 	t.Status.Ready = false
+	now := time.Now().UTC()
 	t.Status.RestartCount++
+	t.Status.RestartBackoffAttempt, t.Status.RestartNotBefore = health.NextRestart(t.Status.RestartBackoffAttempt, t.Status.StartedAt, now)
 	t.Status.StartedAt = time.Time{}
 	t.Status.FinishedAt = time.Time{}
 	t.Status.ExitCode = nil
