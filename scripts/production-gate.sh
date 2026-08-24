@@ -24,6 +24,7 @@ run_gate() {
 }
 
 run_gate linux-runtime env GLIDER_TEST_STRESS="${GLIDER_TEST_STRESS:-1}" scripts/test-linux-runtime.sh
+run_gate api-contract scripts/test-api-contract.sh
 run_gate documentation scripts/test-docs.sh
 run_gate security scripts/test-security.sh
 run_gate vulnerabilities scripts/test-vulnerabilities.sh

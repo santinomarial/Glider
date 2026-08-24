@@ -1,0 +1,242 @@
+syntax = "proto3";
+
+package glider.v2;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// Metadata is common optimistic-concurrency and identity state.
+message Metadata {
+  string id = 1;
+  string name = 2;
+  int64 revision = 3;
+  int64 generation = 4;
+  google.protobuf.Timestamp deletion_time = 5;
+  string idempotency_key = 6;
+}
+
+message Resources {
+  int64 cpu_milli = 1;
+  int64 memory_bytes = 2;
+}
+
+enum NodePhase {
+  NODE_PHASE_UNSPECIFIED = 0;
+  NODE_PHASE_JOINING = 1;
+  NODE_PHASE_READY = 2;
+  NODE_PHASE_SUSPECT = 3;
+  NODE_PHASE_UNREACHABLE = 4;
+  NODE_PHASE_DRAINING = 5;
+  NODE_PHASE_REMOVED = 6;
+}
+
+message Node {
+  Metadata metadata = 1;
+  NodeSpec spec = 2;
+  NodeStatus status = 3;
+}
+
+message NodeSpec {
+  bool unschedulable = 1;
+  map<string, string> labels = 2;
+  Resources capacity = 3;
+  Resources system_reserved = 4;
+  string pod_cidr = 5;
+  string tunnel_address = 6;
+  string operations_address = 7;
+}
+
+message NodeStatus {
+  NodePhase phase = 1;
+  Resources reserved = 2;
+  Resources observed_usage = 3;
+  repeated string images = 4;
+  bool storage_pressure = 5;
+  uint64 storage_total_bytes = 6;
+  uint64 storage_available_bytes = 7;
+  google.protobuf.Timestamp update_time = 8;
+}
+
+enum RestartPolicy {
+  RESTART_POLICY_UNSPECIFIED = 0;
+  RESTART_POLICY_NEVER = 1;
+  RESTART_POLICY_ON_FAILURE = 2;
+  RESTART_POLICY_ALWAYS = 3;
+}
+
+enum ProbeKind {
+  PROBE_KIND_UNSPECIFIED = 0;
+  PROBE_KIND_EXEC = 1;
+  PROBE_KIND_HTTP = 2;
+  PROBE_KIND_TCP = 3;
+}
+
+message Probe {
+  ProbeKind kind = 1;
+  repeated string command = 2;
+  string url = 3;
+  string address = 4;
+  google.protobuf.Duration initial_delay = 5;
+  google.protobuf.Duration period = 6;
+  google.protobuf.Duration timeout = 7;
+  uint32 failure_threshold = 8;
+  uint32 success_threshold = 9;
+}
+
+message HealthSpec {
+  Probe startup = 1;
+  Probe liveness = 2;
+  Probe readiness = 3;
+}
+
+enum TaskPhase {
+  TASK_PHASE_UNSPECIFIED = 0;
+  TASK_PHASE_PENDING = 1;
+  TASK_PHASE_SCHEDULED = 2;
+  TASK_PHASE_RUNNING = 3;
+  TASK_PHASE_TERMINATING = 4;
+  TASK_PHASE_TERMINATED = 5;
+}
+
+message Task {
+  Metadata metadata = 1;
+  TaskSpec spec = 2;
+  TaskStatus status = 3;
+}
+
+message TaskSpec {
+  string workload_id = 1;
+  string image = 2;
+  repeated string command = 3;
+  Resources resources = 4;
+  map<string, string> node_selector = 5;
+  map<string, string> labels = 6;
+  string template_revision = 7;
+  repeated uint32 host_ports = 8;
+  RestartPolicy restart_policy = 9;
+  HealthSpec health = 10;
+  repeated SecretEnvReference secrets = 11;
+  NetworkPolicy network_policy = 12;
+}
+
+message TaskStatus {
+  TaskPhase phase = 1;
+  int64 assignment_generation = 2;
+  string node_id = 3;
+  string address = 4;
+  bool ready = 5;
+  uint32 restart_count = 6;
+  google.protobuf.Timestamp last_health_transition_time = 7;
+}
+
+message SecretEnvReference {
+  string secret_id = 1;
+  string key = 2;
+  string environment_variable = 3;
+}
+
+message NetworkPolicy {
+  bool default_deny_ingress = 1;
+  bool default_deny_egress = 2;
+  repeated NetworkRule ingress = 3;
+  repeated NetworkRule egress = 4;
+}
+
+message NetworkRule {
+  string cidr = 1;
+  string protocol = 2;
+  repeated uint32 ports = 3;
+}
+
+message Workload {
+  Metadata metadata = 1;
+  WorkloadSpec spec = 2;
+  WorkloadStatus status = 3;
+}
+
+message WorkloadSpec {
+  uint32 replicas = 1;
+  TaskSpec template = 2;
+  RolloutStrategy rollout = 3;
+}
+
+message RolloutStrategy {
+  uint32 max_surge = 1;
+  uint32 max_unavailable = 2;
+  google.protobuf.Duration progress_deadline = 3;
+}
+
+message WorkloadStatus {
+  int64 observed_generation = 1;
+  uint32 desired_replicas = 2;
+  uint32 current_replicas = 3;
+  uint32 ready_replicas = 4;
+  uint32 updated_replicas = 5;
+  string current_revision = 6;
+  string update_revision = 7;
+  google.protobuf.Timestamp rollout_started_time = 8;
+  google.protobuf.Timestamp last_progress_time = 9;
+  string rollout_phase = 10;
+  string rollout_message = 11;
+}
+
+message Service {
+  Metadata metadata = 1;
+  ServiceSpec spec = 2;
+  ServiceStatus status = 3;
+}
+
+message ServiceSpec {
+  map<string, string> selector = 1;
+  uint32 port = 2;
+  uint32 target_port = 3;
+}
+
+message ServiceEndpoint {
+  string task_id = 1;
+  string node_id = 2;
+  string address = 3;
+  uint32 port = 4;
+  int64 generation = 5;
+}
+
+message ServiceStatus {
+  string cluster_ip = 1;
+  repeated ServiceEndpoint endpoints = 2;
+  google.protobuf.Timestamp update_time = 3;
+}
+
+message Secret {
+  Metadata metadata = 1;
+  map<string, bytes> data = 2;
+}
+
+message Event {
+  Metadata metadata = 1;
+  google.protobuf.Timestamp time = 2;
+  string type = 3;
+  string reason = 4;
+  string message = 5;
+  string object_kind = 6;
+  string object_id = 7;
+  string node_id = 8;
+  // Attributes is restricted to non-secret, flattened diagnostic context.
+  map<string, string> attributes = 9;
+}
+
+message Assignment {
+  Metadata metadata = 1;
+  string task_id = 2;
+  string workload_id = 3;
+  string node_id = 4;
+  int64 generation = 5;
+  Resources resources = 6;
+  string image = 7;
+  repeated string command = 8;
+  RestartPolicy restart_policy = 9;
+  HealthSpec health = 10;
+  repeated uint32 host_ports = 11;
+  repeated SecretEnvReference secrets = 12;
+  NetworkPolicy network_policy = 13;
+  google.protobuf.Timestamp create_time = 14;
+}

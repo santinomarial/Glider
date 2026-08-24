@@ -1,0 +1,11 @@
+version: v2
+modules:
+  - path: api/proto
+lint:
+  use:
+    - STANDARD
+  ignore:
+    - glider/v1/control.proto
+breaking:
+  use:
+    - FILE

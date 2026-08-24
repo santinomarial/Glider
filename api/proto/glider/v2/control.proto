@@ -1,0 +1,247 @@
+syntax = "proto3";
+
+package glider.v2;
+
+import "glider/v2/resources.proto";
+
+// ControlPlane is Glider's typed, compatibility-enforced public API.
+service ControlPlaneService {
+  rpc PutTask(PutTaskRequest) returns (PutTaskResponse);
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse);
+  rpc PutNode(PutNodeRequest) returns (PutNodeResponse);
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse);
+  rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
+  rpc ListAssignments(ListAssignmentsRequest) returns (ListAssignmentsResponse);
+  rpc PutWorkload(PutWorkloadRequest) returns (PutWorkloadResponse);
+  rpc DeleteWorkload(DeleteWorkloadRequest) returns (DeleteWorkloadResponse);
+  rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
+  rpc PutService(PutServiceRequest) returns (PutServiceResponse);
+  rpc DeleteService(DeleteServiceRequest) returns (DeleteServiceResponse);
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+  rpc PutSecret(PutSecretRequest) returns (PutSecretResponse);
+  rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse);
+  rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse);
+  rpc GetAssignmentSecrets(GetAssignmentSecretsRequest) returns (GetAssignmentSecretsResponse);
+  rpc PutEvent(PutEventRequest) returns (PutEventResponse);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
+  rpc Schedule(ScheduleRequest) returns (ScheduleResponse);
+}
+
+message PutTaskRequest {
+  Task task = 1;
+}
+
+message PutTaskResponse {
+  Task task = 1;
+}
+
+message PutNodeRequest {
+  Node node = 1;
+}
+
+message PutNodeResponse {
+  Node node = 1;
+}
+
+message PutWorkloadRequest {
+  Workload workload = 1;
+}
+
+message PutWorkloadResponse {
+  Workload workload = 1;
+}
+
+message PutServiceRequest {
+  Service service = 1;
+}
+
+message PutServiceResponse {
+  Service service = 1;
+}
+
+message PutSecretRequest {
+  Secret secret = 1;
+}
+
+message PutSecretResponse {
+  SecretMetadata secret = 1;
+}
+
+message PutEventRequest {
+  Event event = 1;
+}
+
+message PutEventResponse {
+  Event event = 1;
+}
+
+message GetTaskRequest {
+  string id = 1;
+}
+
+message GetTaskResponse {
+  Task task = 1;
+}
+
+message DeleteTaskRequest {
+  string id = 1;
+  int64 revision = 2;
+}
+
+message DeleteTaskResponse {
+  DeleteResult result = 1;
+}
+
+message DrainNodeRequest {
+  string id = 1;
+  int64 revision = 2;
+}
+
+message DrainNodeResponse {
+  Node node = 1;
+}
+
+message RemoveNodeRequest {
+  string id = 1;
+  int64 revision = 2;
+}
+
+message RemoveNodeResponse {
+  DeleteResult result = 1;
+}
+
+message DeleteWorkloadRequest {
+  string id = 1;
+  int64 revision = 2;
+}
+
+message DeleteWorkloadResponse {
+  Workload workload = 1;
+}
+
+message DeleteServiceRequest {
+  string id = 1;
+  int64 revision = 2;
+}
+
+message DeleteServiceResponse {
+  DeleteResult result = 1;
+}
+
+message DeleteSecretRequest {
+  string id = 1;
+  int64 revision = 2;
+}
+
+message DeleteSecretResponse {
+  DeleteResult result = 1;
+}
+
+message DeleteResult {
+  string id = 1;
+  bool deleted = 2;
+}
+
+// ListOptions reserves stable pagination and filtering fields before lists
+// become large enough to require a wire-breaking retrofit.
+message ListOptions {
+  uint32 page_size = 1;
+  string page_token = 2;
+  map<string, string> label_selector = 3;
+}
+
+message ListTasksRequest {
+  ListOptions options = 1;
+}
+
+message ListNodesRequest {
+  ListOptions options = 1;
+}
+
+message ListAssignmentsRequest {
+  ListOptions options = 1;
+}
+
+message ListWorkloadsRequest {
+  ListOptions options = 1;
+}
+
+message ListServicesRequest {
+  ListOptions options = 1;
+}
+
+message ListSecretsRequest {
+  ListOptions options = 1;
+}
+
+message ListTasksResponse {
+  repeated Task items = 1;
+  string next_page_token = 2;
+}
+
+message ListNodesResponse {
+  repeated Node items = 1;
+  string next_page_token = 2;
+}
+
+message ListAssignmentsResponse {
+  repeated Assignment items = 1;
+  string next_page_token = 2;
+}
+
+message ListWorkloadsResponse {
+  repeated Workload items = 1;
+  string next_page_token = 2;
+}
+
+message ListServicesResponse {
+  repeated Service items = 1;
+  string next_page_token = 2;
+}
+
+// SecretMetadata deliberately omits secret bytes from mutation and list
+// responses. Secret material is delivered only through assignment fencing.
+message SecretMetadata {
+  Metadata metadata = 1;
+  repeated string keys = 2;
+}
+
+message ListSecretsResponse {
+  repeated SecretMetadata items = 1;
+  string next_page_token = 2;
+}
+
+message GetAssignmentSecretsRequest {
+  string task_id = 1;
+  int64 generation = 2;
+}
+
+message GetAssignmentSecretsResponse {
+  string task_id = 1;
+  int64 generation = 2;
+  map<string, bytes> environment = 3;
+}
+
+message ListEventsRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+  string object_kind = 3;
+  string object_id = 4;
+  string node_id = 5;
+}
+
+message ListEventsResponse {
+  repeated Event items = 1;
+  string next_page_token = 2;
+}
+
+message ScheduleRequest {
+  string task_id = 1;
+}
+
+message ScheduleResponse {
+  Assignment assignment = 1;
+}

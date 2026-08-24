@@ -63,7 +63,7 @@ only as far as the decision or incident requires.
 | Networking | [Network policy](design/network-policy.md), [service discovery](design/service-discovery.md) |
 | Workloads | [Rolling deployments](design/rolling-deployments.md), [secrets](design/secrets.md), [node operations](design/node-operations.md) |
 | Security | [Control-plane security](design/control-plane-security.md), [security model](design/security-model.md), [failure model](design/failure-model.md) |
-| Interfaces | [CLI](design/cli.md), [observability](design/observability.md) |
+| Interfaces | [API versioning](design/api-versioning.md), [CLI](design/cli.md), [observability](design/observability.md) |
 
 ## Architecture decisions
 

@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package glider.v2;
+
+// NodeOperations is served by gliderd. Every operation is authenticated and
+// fenced to the current task assignment generation.
+service NodeOperationsService {
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc Exec(ExecRequest) returns (ExecResponse);
+}
+
+message AssignmentIdentity {
+  string task_id = 1;
+  int64 generation = 2;
+}
+
+message GetLogsRequest {
+  AssignmentIdentity assignment = 1;
+  uint64 tail_bytes = 2;
+}
+
+message GetLogsResponse {
+  AssignmentIdentity assignment = 1;
+  bytes data = 2;
+  bool truncated = 3;
+}
+
+message GetStatsRequest {
+  AssignmentIdentity assignment = 1;
+}
+
+message GetStatsResponse {
+  AssignmentIdentity assignment = 1;
+  uint64 cpu_usage_usec = 2;
+  uint64 memory_current_bytes = 3;
+  uint64 pids_current = 4;
+}
+
+message ExecRequest {
+  AssignmentIdentity assignment = 1;
+  repeated string command = 2;
+  uint32 timeout_seconds = 3;
+}
+
+message ExecResponse {
+  AssignmentIdentity assignment = 1;
+  int32 exit_code = 2;
+  bytes data = 3;
+  bool truncated = 4;
+}
