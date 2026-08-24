@@ -6,7 +6,7 @@ DURATION="${GLIDER_FUZZ_TIME:-30s}"
 
 if [ "$(uname -s)" != Linux ]; then
 	exec docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work \
-		-e GLIDER_FUZZ_TIME="${DURATION}" golang:1.26 bash -c \
+		-e GLIDER_FUZZ_TIME="${DURATION}" golang:1.26.6 bash -c \
 		'tar -C /src -cf - . | tar -C /work -xf - && exec bash scripts/test-fuzz.sh'
 fi
 

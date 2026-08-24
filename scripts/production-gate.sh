@@ -13,7 +13,7 @@ WORK="$(mktemp -d)"
 LOGS="${WORK}/logs"
 KEY="${WORK}/release.key"
 mkdir -p "${LOGS}"
-docker run --rm -v "${WORK}:/work" golang:1.26 \
+docker run --rm -v "${WORK}:/work" golang:1.26.6 \
 	openssl genpkey -algorithm Ed25519 -out /work/release.key >/dev/null 2>&1
 
 run_gate() {
@@ -34,13 +34,13 @@ run_gate convergence-chaos env GLIDER_CHAOS_ITERATIONS="${GLIDER_CHAOS_ITERATION
 run_gate monitoring scripts/test-monitoring.sh
 run_gate environment-qualification-contract scripts/test-environment-qualification.sh
 run_gate environment-evidence-contract scripts/test-environment-evidence.sh
-run_gate backup-recovery docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work golang:1.26 sh -c 'tar -C /src -cf - . | tar -C /work -xf - && go test -race -v ./test/integration/backup ./test/integration/secrets'
+run_gate backup-recovery docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work golang:1.26.6 sh -c 'tar -C /src -cf - . | tar -C /work -xf - && go test -race -v ./test/integration/backup ./test/integration/secrets'
 run_gate packaged-ha scripts/test-packaged-ha.sh
 run_gate packaged-upgrade scripts/test-upgrade.sh
 run_gate benchmarks scripts/benchmark.sh
 run_gate runtime-benchmark scripts/benchmark-runtime.sh
 
-run_gate signed-release env GLIDER_SIGNING_KEY="${KEY}" docker run --rm -v "${REPO_ROOT}:/src" -v "${KEY}:/release.key:ro" -w /src -e GLIDER_SIGNING_KEY=/release.key golang:1.26 sh -c 'bash scripts/release.sh && bash scripts/verify-release.sh dist'
+run_gate signed-release env GLIDER_SIGNING_KEY="${KEY}" docker run --rm -v "${REPO_ROOT}:/src" -v "${KEY}:/release.key:ro" -w /src -e GLIDER_SIGNING_KEY=/release.key golang:1.26.6 sh -c 'bash scripts/release.sh && bash scripts/verify-release.sh dist'
 
 EVIDENCE="${REPO_ROOT}/dist/evidence"
 mkdir -p "${EVIDENCE}/logs"
@@ -51,7 +51,7 @@ cp docs/release/compatibility-matrix.md "${EVIDENCE}/compatibility-matrix.md"
 	printf 'version=%s\n' "$(tr -d '[:space:]' < VERSION)"
 	printf 'completed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	printf 'host=%s\n' "$(uname -srm)"
-	printf 'go_image=%s\n' 'golang:1.26'
+	printf 'go_image=%s\n' 'golang:1.26.6'
 	printf 'prometheus_image=%s\n' 'prom/prometheus:v3.7.3'
 } > "${EVIDENCE}/manifest.txt"
 if command -v sha256sum >/dev/null 2>&1; then

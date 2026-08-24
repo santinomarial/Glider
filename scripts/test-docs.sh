@@ -8,7 +8,7 @@ trap 'rm -rf "${WORK}"' EXIT
 chmod 0777 "${WORK}"
 
 docker run --rm -v "${REPO_ROOT}:/src:ro" -v "${WORK}:/out" -w /src \
-	golang:1.26 go run ./tools/docs-check -root /src -mermaid-dir /out
+	golang:1.26.6 go run ./tools/docs-check -root /src -mermaid-dir /out
 
 for source in "${WORK}"/*.mmd; do
 	name="$(basename "${source}" .mmd)"

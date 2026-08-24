@@ -4,7 +4,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ITERATIONS="${GLIDER_CHAOS_ITERATIONS:-25}"
 if [ "$(uname -s)" != Linux ]; then
 	exec docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work \
-		-e GLIDER_CHAOS_ITERATIONS golang:1.26 bash -c \
+		-e GLIDER_CHAOS_ITERATIONS golang:1.26.6 bash -c \
 		'tar -C /src -cf - . | tar -C /work -xf - && exec bash scripts/test-chaos.sh'
 fi
 cd "${REPO_ROOT}"

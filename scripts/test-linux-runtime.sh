@@ -21,7 +21,7 @@ set -euo pipefail
 
 export GLIDER_REQUIRE_PRIVILEGED_TESTS=1
 
-DOCKER_IMAGE="golang:1.26"
+DOCKER_IMAGE="golang:1.26.6"
 case "$(uname -m)" in
 	arm64|aarch64) DEFAULT_DOCKER_PLATFORM="linux/arm64" ;;
 	*) DEFAULT_DOCKER_PLATFORM="linux/amd64" ;;

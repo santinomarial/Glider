@@ -38,12 +38,12 @@ create_archive() {
 		echo "reproducible archives require GNU tar or Docker" >&2
 		return 2
 	fi
-	echo "GNU tar unavailable; creating reproducible archive with golang:1.26"
+	echo "GNU tar unavailable; creating reproducible archive with golang:1.26.6"
 	docker run --rm \
 		-v "${STAGE_ROOT}:/stage:ro" \
 		-v "${OUTPUT}:/output" \
 		-w /stage \
-		golang:1.26 \
+		golang:1.26.6 \
 		tar --sort=name --mtime="@${SOURCE_EPOCH}" --owner=0 --group=0 --numeric-owner -czf "/output/$(basename "${archive}")" "${stage_name}"
 }
 

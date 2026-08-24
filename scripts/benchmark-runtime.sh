@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-DOCKER_IMAGE="golang:1.26"
+DOCKER_IMAGE="golang:1.26.6"
 case "$(uname -m)" in arm64|aarch64) DEFAULT_DOCKER_PLATFORM="linux/arm64" ;; *) DEFAULT_DOCKER_PLATFORM="linux/amd64" ;; esac
 DOCKER_PLATFORM="${GLIDER_TEST_PLATFORM:-${DEFAULT_DOCKER_PLATFORM}}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

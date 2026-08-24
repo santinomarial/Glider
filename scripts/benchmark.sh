@@ -5,7 +5,7 @@ SOURCE_COMMIT="${GLIDER_SOURCE_COMMIT:-$(git -C "${REPO_ROOT}" rev-parse HEAD)}"
 if ! command -v go >/dev/null 2>&1; then
 	exec docker run --rm -v "${REPO_ROOT}:/src:ro" --mount type=volume,dst=/work -w /work \
 		-e GLIDER_SCHEDULE_NS_MAX -e GLIDER_SCHEDULE_BYTES_MAX -e GLIDER_LOOKUP_NS_MAX -e GLIDER_LOOKUP_BYTES_MAX -e GLIDER_PERFORMANCE_ITERATIONS -e GLIDER_SCHEDULE_100_P99_MAX -e GLIDER_SCHEDULE_1000_P99_MAX -e GLIDER_DISCOVERY_1000_P99_MAX -e GLIDER_SOURCE_COMMIT="${SOURCE_COMMIT}" \
-		golang:1.26 bash -o pipefail -c 'tar --exclude=./.git --exclude=./dist --exclude=./work -C /src -cf - . | tar -C /work -xf - && exec bash scripts/benchmark.sh'
+		golang:1.26.6 bash -o pipefail -c 'tar --exclude=./.git --exclude=./dist --exclude=./work -C /src -cf - . | tar -C /work -xf - && exec bash scripts/benchmark.sh'
 fi
 cd "${REPO_ROOT}"
 SCHEDULE_NS_MAX="${GLIDER_SCHEDULE_NS_MAX:-500000}"

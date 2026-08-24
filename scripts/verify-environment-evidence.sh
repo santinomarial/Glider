@@ -40,6 +40,6 @@ if [ "${decision}" != approved ] || [ -z "${reviewer}" ]; then
 	echo "independent security approval is missing" >&2
 	exit 1
 fi
-docker run --rm -v "${EVIDENCE}:/evidence:ro" -v "${PUBLIC_KEY}:/reviewer.pem:ro" -w /evidence golang:1.26 \
+docker run --rm -v "${EVIDENCE}:/evidence:ro" -v "${PUBLIC_KEY}:/reviewer.pem:ro" -w /evidence golang:1.26.6 \
 	sh -c 'sha256sum --check SHA256SUMS && openssl pkeyutl -verify -pubin -inkey /reviewer.pem -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig'
 echo "ENVIRONMENT EVIDENCE GREEN: multi-host qualification and independent review are bound to ${expected}"

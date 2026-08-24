@@ -46,5 +46,5 @@ release acceptance check. Every release also contains an SPDX 2.3 dependency
 SBOM and an in-toto SLSA v1 provenance statement binding both architecture
 archives to the exact Git commit and SHA-256 digest. Verification fails if an
 artifact no longer matches its provenance subject. Archive normalization uses
-local GNU tar when available and the pinned `golang:1.26` container otherwise,
+local GNU tar when available and the pinned `golang:1.26.6` container otherwise,
 so the same release command works on macOS.

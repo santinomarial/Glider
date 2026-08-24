@@ -50,5 +50,5 @@ and deletes it, and API v1 confirms the deletion. It then stops the current
 binary, downgrades the schema to v1, and performs a canary lifecycle through the
 legacy binary. Any binary startup, schema bound, API mutation, or rollback
 failure fails the gate. On non-Linux hosts the harness re-executes the entire
-packaged qualification inside the pinned `golang:1.26` Linux container so it
+packaged qualification inside the pinned `golang:1.26.6` Linux container so it
 never attempts to run release binaries on the host kernel.
