@@ -10,7 +10,7 @@ Write each page for one primary reader need:
 
 | Type | Reader question | Required shape | Glider location |
 |---|---|---|---|
-| Tutorial | “Can you teach me?” | Guided learning path with a safe result | Add `docs/tutorials/` when the first tutorial is written |
+| Tutorial | “Can you teach me?” | Guided learning path with a safe result | `docs/tutorials/` |
 | How-to | “How do I achieve this outcome?” | Preconditions, ordered actions, verification, rollback | `docs/operations/` |
 | Reference | “What exactly is the contract?” | Precise inputs, outputs, invariants, limits, and errors | `docs/design/` |
 | Explanation | “Why is it designed this way?” | Context, trade-offs, alternatives, consequences | `docs/architecture/` and `docs/adr/` |

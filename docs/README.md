@@ -14,12 +14,14 @@ contract, or verify a release.
 
 | If you want to… | Start with | Then read |
 |---|---|---|
+| Try Glider without provisioning a cluster | [Local demo tutorial](tutorials/local-demo.md) | [Architecture overview](architecture/overview.md) |
+| Record a demo or present the project | [Presentation guide](tutorials/presenting-glider.md) | [Readiness boundaries](release/production-readiness.md) |
 | Understand what Glider does | [Architecture overview](architecture/overview.md) | [System context](architecture/system-context.md) and [container view](architecture/container-view.md) |
 | Install a node | [Installation](operations/install.md) | [Hardening](operations/hardening.md) and [PKI](operations/pki.md) |
 | Operate a cluster | [High availability](operations/high-availability.md) | [Monitoring](operations/monitoring.md), [backup/restore](operations/backup-restore.md), and [incident response](operations/incident-response.md) |
 | Understand one subsystem | [Design documents](#design-and-reference) | The related [architecture decisions](#architecture-decisions) |
 | Qualify a release | [Production gate](testing/production-gate.md) | [Environment evidence](release/environment-evidence.md) and [readiness gates](release/production-readiness.md) |
-| Contribute documentation | [Documentation standard](contributing/documentation.md) | [Architecture diagram standard](architecture/README.md) |
+| Contribute code or documentation | [Contribution guide](../CONTRIBUTING.md) | [Documentation standard](contributing/documentation.md) |
 
 ## Architecture
 

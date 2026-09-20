@@ -79,7 +79,7 @@ func main() {
 
 func markdownFiles(root string) ([]string, error) {
 	files := make([]string, 0)
-	for _, top := range []string{"README.md", "SECURITY.md"} {
+	for _, top := range []string{"README.md", "SECURITY.md", "CONTRIBUTING.md", "SUPPORT.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md", "ROADMAP.md"} {
 		path := filepath.Join(root, top)
 		if _, err := os.Stat(path); err == nil {
 			files = append(files, path)
