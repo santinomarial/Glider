@@ -80,6 +80,14 @@ punctuation, and avoid experimental diagram types. GitHub documents the
 supported format in
 [Creating diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams).
 
+This applies to design documents and ADRs as well as architecture pages.
+Use the shared [visual conventions](../architecture/README.md#visual-language),
+include nonempty `accTitle` and `accDescr` metadata, and keep a nearby key.
+Do not introduce ASCII arrow diagrams that bypass rendering checks. Plain
+paths, protocol payloads, and command output should stay copyable text;
+ownership lists and directory inventories usually read better as tables.
+Mark historical designs explicitly rather than presenting them as current.
+
 ## Review checklist
 
 - [ ] The page has one clear reader outcome and one level-one heading.

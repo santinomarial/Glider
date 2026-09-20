@@ -21,12 +21,39 @@ overview.md).
 
 ## 1. States
 
-```text
-ABSENT ──► CREATING ──► CREATED ──► RUNNING ──► STOPPING ──► EXITED ──► DELETING ──► ABSENT
-              │             │           │                       ▲
-              └─────────────┴───────────┴───────► FAILED ───────┘
-                        (creation or runtime setup error)
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff"}}}%%
+stateDiagram-v2
+    direction TB
+    accTitle: Local container lifecycle — terminal states still need deletion
+    accDescr: Creation leads to running and then exited or failed. Both terminal states enter deleting. The record disappears only after resource cleanup completes.
+    [*] --> CREATING
+    CREATING --> CREATED: init identity recorded
+    CREATED --> RUNNING: exec confirmed
+    RUNNING --> STOPPING: stop requested
+    RUNNING --> EXITED: exit observed
+    STOPPING --> EXITED: exit or kill escalation
+    CREATING --> FAILED: setup failure
+    CREATED --> FAILED: launch failure
+    RUNNING --> FAILED: unrecoverable inconsistency
+    STOPPING --> FAILED: unrecoverable inconsistency
+    EXITED --> DELETING: cleanup requested
+    FAILED --> DELETING: cleanup requested
+    DELETING --> [*]: cleanup complete / record deleted last
+    classDef pending fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef active fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef terminal fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    class CREATING,CREATED pending
+    class RUNNING active
+    class STOPPING,EXITED,DELETING terminal
+    class FAILED failure
 ```
+
+**Key:** blue = preparation; green = running; purple = stopping/cleanup;
+amber = failure. Start/end markers represent ABSENT (no record), not a stored
+phase. Arrows match the [runtime transition table](../../internal/runtime/process/state/state.go),
+including direct RUNNING-to-EXITED and STOPPING-to-FAILED paths.
 
 | State | Meaning | On-disk record |
 |---|---|---|

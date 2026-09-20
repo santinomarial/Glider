@@ -14,6 +14,24 @@ runtime behavior.
 | [Runtime flows](runtime-flows.md) | How does desired state become a running container, and how is stale authority fenced? | Maintainers, incident responders |
 | [Architecture overview](overview.md) | Which principles, identifiers, and state machines govern the design? | All technical readers |
 
+## Deep-design figures
+
+The same notation applies throughout the repository, not only in this directory.
+
+| Source | Figures |
+|---|---|
+| [Container lifecycle](../design/container-lifecycle.md) | Legal local state transitions and cleanup |
+| [Runtime](../design/runtime.md) | Historical direct exec, launch barrier, process identities and shutdown |
+| [cgroup v2](../design/cgroups.md) | Delegation and attach-before-exec ordering |
+| [Image store](../design/image-store.md) | Verified image to restricted execution |
+| [Security model](../design/security-model.md) | Complementary defense layers |
+| [ADR-0004](../adr/0004-overlayfs-snapshotter.md) | OverlayFS composition and private writes |
+| [ADR-0006](../adr/0006-glider-init-pid1-supervisor.md) | PID 1 supervision boundary |
+
+Together with the README and architecture views, these are 25 rendered figures.
+Package ownership and exact directory layouts use tables; command output, paths
+and wire-protocol examples remain text, not decorative diagrams.
+
 ## Visual language
 
 Each view answers one question. The container view separates process-level
@@ -49,7 +67,8 @@ distinctions. State and sequence diagrams include their own local legends.
 
 ## Diagram maintenance
 
-Diagrams describe the current system, not a future roadmap. When a process,
+Diagrams describe the current system unless explicitly labeled historical;
+historical figures name the decision that superseded them. When a process,
 protocol, trust boundary, or state owner changes, update the diagram in the
 same commit as the implementation and link the governing ADR or design page.
 See the [documentation standard](../contributing/documentation.md) for review

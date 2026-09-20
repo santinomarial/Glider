@@ -15,6 +15,9 @@ import (
 
 var markdownLink = regexp.MustCompile(`\[[^]]*\]\(([^)]+)\)`)
 
+var diagramTitle = regexp.MustCompile(`(?m)^\s*accTitle:[\t ]*\S[^\r\n]*$`)
+var diagramDescription = regexp.MustCompile(`(?m)^\s*accDescr:[\t ]*\S[^\r\n]*$`)
+
 func main() {
 	root := flag.String("root", ".", "repository root")
 	mermaidDir := flag.String("mermaid-dir", "", "optional directory for extracted Mermaid definitions")
@@ -59,6 +62,10 @@ func main() {
 		}
 		for index, block := range blocks {
 			diagram++
+			if err := validateDiagram(block); err != nil {
+				errors = append(errors, fmt.Sprintf("%s: diagram %d: %v", rel, index+1, err))
+				continue
+			}
 			if *mermaidDir != "" {
 				stem := strings.ToLower(strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel)))
 				name := fmt.Sprintf("%s-%02d.mmd", strings.ReplaceAll(stem, "/", "--"), index+1)
@@ -142,6 +149,16 @@ func mermaidBlocks(text string) ([]string, error) {
 		return nil, fmt.Errorf("unclosed Mermaid fence")
 	}
 	return blocks, scanner.Err()
+}
+
+func validateDiagram(block string) error {
+	if !diagramTitle.MatchString(block) {
+		return fmt.Errorf("missing nonempty accTitle")
+	}
+	if !diagramDescription.MatchString(block) {
+		return fmt.Errorf("missing nonempty accDescr")
+	}
+	return nil
 }
 
 func fatal(err error) {

@@ -42,17 +42,26 @@ Glider's own init (`glider-init`, the re-exec'd `__glider_init__` entrypoint)
 **remains PID 1 for the lifetime of the container** and runs the workload as
 a supervised child (PID 2+ inside the namespace):
 
-```text
-host launcher (glider-runtime run)
-   │  clone(CLONE_NEWPID|...)
-   ▼
-glider-init            host-visible PID = launcher's child PID
-  (namespace PID 1)    namespace-visible PID = 1
-   │  mount setup, pivot_root, fork+exec
-   ▼
-workload                host-visible PID = some host PID > glider-init's
-  (namespace PID 2+)     namespace-visible PID = some namespace PID > 1
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart LR
+    accTitle: ADR-0006 — Glider owns PID 1 for the entire container lifetime
+    accDescr: The host launcher starts init in new namespaces. Init remains PID 1, pivots the root and supervises the workload as a separate child.
+    host["Host launcher<br/>glider-runtime run"]:::control
+    subgraph ns["CONTAINER PID NAMESPACE"]
+        init["glider-init · PID 1<br/>Signals · reaping · exit record"]:::worker
+        workload["Workload · PID 2+<br/>Separate supervised process"]:::worker
+        init -->|"Root setup · fork + exec"| workload
+    end
+    host -->|"clone flags + re-exec"| init
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** blue = host process; green = container-namespace process. Arrows mean process creation, not network calls. Host PIDs and namespace PIDs are different identities; neither exact workload PID 2 nor relative host-PID ordering is guaranteed.
 
 `glider-init` owns: forking/execing the workload, installing signal
 handlers, forwarding signals, reaping all descendants (`wait4`-on-`SIGCHLD`,

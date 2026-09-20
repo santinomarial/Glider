@@ -29,25 +29,24 @@ Glider uses a re-exec model, the same shape used by runc: a short-lived
 "launcher" process configures namespaces and hands off to a second
 invocation of the same binary running as the container's init.
 
-```text
-gliderd (or, standalone: glider-runtime run)
-    │
-    │ clone(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWUTS|CLONE_NEWIPC|CLONE_NEWNET|CLONE_NEWCGROUP)
-    ▼
-launcher process (parent, stays in caller's original namespaces except
-                  where clone flags placed it in new ones)
-    │
-    │ configures the child's environment via the sync protocol (§3),
-    │ then the child execs itself as `<binary> __glider_init__`
-    ▼
-container init (PID 1 inside the new PID namespace)
-    │
-    │ mount setup, pivot_root (§4)
-    │
-    │ execve(entrypoint)
-    ▼
-user workload process (still PID 1)
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart LR
+    accTitle: Historical Phase 1 — direct exec replaced by PID 1 supervision
+    accDescr: In Phase 1 the host launcher cloned a namespaced init, which prepared the root and exec-replaced itself with the workload. Both names refer to one namespace PID 1 process.
+    host["Phase 1 host launcher<br/>Original namespaces"]:::control
+    init["Re-exec init<br/>New namespaces · PID 1"]:::worker
+    workload["Workload · PID 1<br/>Same process after exec"]:::failure
+    host -->|"clone flags + re-exec"| init
+    init -->|"pivot_root + execve"| workload
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** historical Phase 1 model only, superseded by §8 and ADR-0006. Blue = host process; green = setup; amber = the replaced direct-exec design. The launcher stays on the host; clone flags apply to its child. These arrows are process creation/replacement, not RPCs.
 
 Rationale for re-exec over a single-process `clone()`-then-continue: Go's
 runtime is multi-threaded before `main()` even starts (GC, sysmon, etc.),
@@ -94,18 +93,25 @@ the whole launch so a wedged child cannot hang `gliderd` indefinitely, but
 the timeout is a backstop for detecting failure, never the mechanism used
 to *sequence* correct-path execution.
 
-```text
-launcher                              init (child)
-   │  clone()                              │
-   │─────────────────────────────────────► │ (new namespaces active)
-   │                                        │ configure mounts, hostname
-   │                                        │ write "ready" to parent-pipe
-   │  ◄─────────────────────────────────────│
-   │  read parent-pipe -> proceed           │
-   │  (do any parent-side-only setup)       │
-   │  write "go" to child-pipe   ──────────►│  read child-pipe -> proceed
-   │  record state = CREATED                │  pivot_root, execve
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","actorBkg":"#e8f0ff","actorBorder":"#3563a4","actorTextColor":"#183b6a","signalColor":"#64748b","signalTextColor":"#172b4d","noteBkgColor":"#fff4db","noteBorderColor":"#b9892a","noteTextColor":"#634615"},"sequence":{"mirrorActors":false,"messageMargin":26}}}%%
+sequenceDiagram
+    accTitle: Launch barrier — persist identity before releasing the workload
+    accDescr: Init prepares mounts and signals ready. The launcher completes host-side setup and persists CREATED before sending go. Init then pivots root and launches the workload.
+    autonumber
+    participant L as Host launcher
+    participant I as glider-init / PID 1
+    L->>I: clone flags + re-exec
+    I->>I: Prepare mounts and hostname
+    I-->>L: ready byte · child-ready pipe
+    L->>L: Capture identity and finish host-side setup
+    L->>L: Persist CREATED
+    L->>I: go byte · parent-ready pipe
+    I->>I: pivot_root and launch workload
+    Note over L,I: Failure / EOF / timeout aborts launch<br/>Never substitutes for ready
 ```
+
+**Key:** solid messages = actions or pipe writes; dashed = readiness reply. This is the barrier's ordering, not an exhaustive launch trace. Current cgroup attachment and network setup occur before CREATED; see [cgroups](cgroups.md). Phase 1 exec-replaced init; the current supervisor forks a child.
 
 ## 4. Mount setup and pivot_root
 
@@ -292,31 +298,26 @@ this section is the operational contract that follows from it.
 
 ### 8.1 Process identity, end to end
 
-```text
-host launcher (glider-runtime run)     host-visible PID = the OS pid of
-                                        this process, as usual
-   │  clone(CLONE_NEWPID|...)
-   ▼
-glider-init (__glider_init__)          host-visible PID = observed by the
-  namespace PID 1                      launcher directly via the clone's
-                                        return value; namespace-visible
-                                        PID = 1 (it's the first process in
-                                        the new namespace)
-   │  fork+exec (ordinary child, no new namespace)
-   ▼
-workload                               host-visible PID = not directly
-  namespace PID 2+ (kernel-assigned,   observable by glider-init (a
-  not asserted to be exactly 2 — see  process cannot learn another
-  the note in the integration test    process's host-visible PID from
-  suite: glider-init's own Go         inside a nested PID namespace by
-  runtime threads consume PID/TID     any syscall — deliberate, not a
-  numbers before the fork)            missing API); the launcher
-                                       resolves it best-effort, after the
-                                       fact, by scanning the host's own
-                                       /proc for the process whose PPid
-                                       is glider-init's host PID
-                                       (identity.go's resolveChildIdentity)
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart LR
+    accTitle: Process identities — host PID and namespace PID are different views
+    accDescr: The launcher observes the init host PID and start time. Init is namespace PID 1 and supervises a child with a kernel-assigned PID above 1. Workload host identity is best-effort telemetry.
+    host["Host launcher<br/>Observes InitPID + start time"]:::control
+    subgraph namespace["CONTAINER PID NAMESPACE"]
+        init["glider-init · PID 1<br/>Durable recovery identity"]:::worker
+        child["Workload · PID 2+<br/>Kernel-assigned child identity"]:::worker
+        init -->|"fork + exec · supervise"| child
+    end
+    host -->|"clone flags + re-exec"| init
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** blue = host process; green = processes in the container PID namespace. Arrows are parent/child creation. PID 2+ means greater than 1, not exactly 2; init's runtime threads also consume IDs. The launcher resolves the workload's host PID best-effort via host /proc. No numerical ordering of host PIDs is guaranteed.
 
 Only `InitPID`/`InitStartTime` are load-bearing for recovery correctness
 (§8.6). `WorkloadPID`/`WorkloadStartTime` are recorded on a best-effort,
@@ -432,24 +433,30 @@ adopt.
 
 ### 8.7 Graceful shutdown protocol
 
-```text
-external SIGTERM/SIGINT reaches glider-runtime (the launcher)
-        ↓
-launcher: STOPPING written durably, forwards the SAME signal to
-          glider-init's host PID (not normalized to SIGTERM — the actual
-          signal is preserved end to end)
-        ↓
-glider-init: forwards the same signal to the workload's process group,
-             starts its own monotonic grace-period timer (config.go's
-             StopGrace; default 10s, overridable via --stop-grace or
-             Config.StopGrace — production default unchanged from Phase 1,
-             now configurable so tests don't have to wait 10s for real)
-        ↓
-workload exits within the grace period?
-   ├── yes → reap → glider-init durably records EXITED (§8.8) → exits
-   └── no  → glider-init sends SIGKILL to the workload's process group →
-             reap → records EXITED → exits
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","actorBkg":"#e8f0ff","actorBorder":"#3563a4","actorTextColor":"#183b6a","signalColor":"#64748b","signalTextColor":"#172b4d","noteBkgColor":"#fff4db","noteBorderColor":"#b9892a","noteTextColor":"#634615"},"sequence":{"mirrorActors":false,"messageMargin":26}}}%%
+sequenceDiagram
+    accTitle: Graceful shutdown — preserve signals, then escalate on deadline
+    accDescr: The launcher records STOPPING and forwards the original signal. Init signals the workload group, waits its grace period, kills survivors if needed, reaps and persists EXITED.
+    autonumber
+    participant L as Host launcher
+    participant I as glider-init / PID 1
+    participant W as Workload group
+    L->>L: Receive TERM / INT and persist STOPPING
+    L->>I: Forward the same signal
+    I->>W: Signal process group and start grace timer
+    alt exits before StopGrace
+        W-->>I: Child exit observed
+    else grace expires
+        I->>W: SIGKILL process group
+        W-->>I: Child exit observed
+    end
+    I->>I: Reap descendants and persist EXITED
+    I-->>L: Supervisor exits
+    Note over L,I: Longer launcher backstop<br/>Kills a stuck init<br/>Tears down its PID namespace
 ```
+
+**Key:** solid = signal/action; dashed = observed exit. The grace timer defaults to 10 seconds and is configurable. The launcher backstop is a separate failure safeguard, not the normal sequence.
 
 The launcher keeps its own **outer backstop** deadline
 (`StopGrace + outerBackstopBuffer`, strictly longer than glider-init's own

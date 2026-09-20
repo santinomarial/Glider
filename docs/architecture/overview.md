@@ -73,46 +73,51 @@ rejects stale generations. See §5.4 and `failure-model.md`.
 
 ## 3. End-to-end path
 
-```text
-glider CLI  --(gRPC)-->  API server
-                             │
-                    validate + persist spec
-                             │
-                            etcd  (desired state, source of truth)
-                             │
-                    workload controller (watch)
-                             │
-                    creates/updates Task objects (desired replica slots)
-                             │
-                          scheduler (watch pending tasks)
-                             │
-                filter candidate nodes -> score -> pick one
-                             │
-              atomic bind: etcd compare-and-swap creates Assignment
-              (task_id, generation N, node_id) iff task was unbound
-                             │
-                            etcd
-                             │
-                 gliderd on node_id (watch assignments for this node)
-                             │
-                 reconcile loop: observed vs desired for this task
-                             │
-        ensure image (pull, verify digest, unpack) -> content store
-                             │
-                 ensure OverlayFS root (lower=image layers, upper=container)
-                             │
-                 ensure network (netns, veth, bridge attach, IP)
-                             │
-        ensure namespaces + cgroup v2 + capabilities + seccomp + no_new_privs
-                             │
-                 launch container init (PID 1 in its namespaces)
-                             │
-                 report observed state (container RUNNING, generation N)
-                             │
-                            etcd  (status, separate from spec)
-                             │
-              controllers observe status -> re-reconcile if diverged
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart LR
+    accTitle: Reconciliation loop — durable intent to observed state
+    accDescr: Admission commits intent, controllers bind replica slots, and workers realize assignments and report status. Controllers repeatedly compare intent with observation.
+    subgraph declare["01 · DECLARE AND COMMIT"]
+        direction TB
+        cli(["glider CLI"]):::person
+        api["API admission<br/>Authenticate + validate"]:::control
+        intent[("etcd desired state")]:::store
+        cli -->|"mTLS gRPC"| api
+        api -->|"Commit · etcd mTLS"| intent
+    end
+    subgraph place["02 · RECONCILE AND PLACE"]
+        direction TB
+        slots["Workload controller<br/>Create replica slots"]:::control
+        scheduler["Scheduler<br/>Filter · score · CAS bind"]:::control
+        assignment[("etcd assignment<br/>Task + generation + node")]:::store
+        slots -->|"Pending tasks"| scheduler
+        scheduler -->|"Atomic reservation"| assignment
+    end
+    subgraph realize["03 · REALIZE AND OBSERVE"]
+        direction TB
+        agent["gliderd reconciler<br/>Check current authority"]:::worker
+        resources["Images + Linux runtime<br/>Rootfs · network · isolation"]:::worker
+        status[("etcd observed status<br/>Generation-fenced writes")]:::store
+        agent -->|"Ensure local resources"| resources
+        resources -->|"Report · etcd mTLS"| status
+    end
+    declare -->|"etcd watch"| place
+    place <-->|"etcd watches"| realize
+    classDef person fill:#172b4d,stroke:#172b4d,color:#ffffff
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** dark = operator tool; blue = control-plane work; green = node execution;
+purple = durable data. Phase enclosures show processing order, not hosts.
+The two-headed edge carries assignments to workers and observed status back
+to controllers. The cylinders are logical records in the same etcd cluster,
+not separate databases. All etcd connections use mTLS. Detailed Linux setup
+ordering is in [runtime flows](runtime-flows.md).
 
 The loop at the bottom never terminates: `gliderd` re-evaluates desired vs.
 observed on every watch event and on a periodic resync, so a divergence
@@ -151,114 +156,121 @@ container after a crash.
 
 ### 5.1 Node lifecycle
 
-```text
-                 join succeeds, lease acquired
-   JOINING ─────────────────────────────────────► READY
-                                                     │  │
-                                    heartbeat missed │  │ operator drain
-                                        (soft, N misses)│
-                                                     ▼  │
-                                                 SUSPECT │
-                                                     │   │
-                                lease renewed        │   │
-                              before expiry ◄─────────┘   │
-                                                     │     │
-                                          lease expires    │
-                                                     ▼     ▼
-                                            UNREACHABLE  DRAINING
-                                                     │     │
-                                    operator confirms │     │ all tasks
-                                    removal / node    │     │ evacuated
-                                    rejoins with new  │     │
-                                    lease + self-fence│     │
-                                                     ▼     ▼
-                                                  REMOVED (terminal, or
-                                                  rejoin re-enters JOINING
-                                                  with a fresh NodeID lease)
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+stateDiagram-v2
+    direction LR
+    accTitle: Node health — lease observation and operator drain
+    accDescr: A live lease promotes joining, suspect or unreachable nodes to ready. Absence marks ready nodes suspect, then unreachable after grace. Drain is an operator action.
+    JOINING --> READY: lease present
+    READY --> SUSPECT: lease absent
+    SUSPECT --> READY: lease restored
+    SUSPECT --> UNREACHABLE: absent beyond grace
+    UNREACHABLE --> READY: fresh live lease
+    READY --> DRAINING: operator drain
+    class JOINING control
+    class READY worker
+    class SUSPECT,UNREACHABLE failure
+    class DRAINING store
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** blue = joining; green = schedulable health; amber = lease uncertainty/loss; purple = administrative drain. Arrows show the monitor's health transitions and a common drain path, not proof of process shutdown. Drain may also be requested from other phases. Removal deletes the node record after reservation checks; it is not an automatic transition to a stored `REMOVED` phase.
 
 - **JOINING**: node has a persisted `NodeID` and is establishing its lease
   with the control plane; not yet schedulable.
 - **READY**: lease is current; scheduler may place tasks here.
-- **SUSPECT**: heartbeats are late but the lease has not yet expired. This is
-  purely a scheduling signal — *new* placements are avoided, but existing
-  assignments remain valid and are **not** fenced. A single missed heartbeat
-  must not trigger rescheduling; see `failure-model.md` for why (detection
-  latency vs. false-positive churn is a tunable, not a hardcoded assumption).
-- **UNREACHABLE**: the node's lease expired. Its assignments become eligible
-  for fencing and reschedule (§5.4). This is a control-plane-observed state;
+- **SUSPECT**: the monitor cannot find a live lease. New placements are
+  avoided; the monitor waits its configured grace period before eviction.
+  The node's own self-fencing deadline is independent of this monitor grace.
+- **UNREACHABLE**: the lease remained absent beyond the monitor grace.
+  Its assignments are evicted and requeued (§5.4). This is an observed state;
   it is not proof the node's processes have stopped.
 - **DRAINING**: operator-initiated, orthogonal to health. Existing tasks are
   rescheduled elsewhere deliberately; new placements are refused.
-- **REMOVED**: terminal for that `NodeID`. A physical machine that rejoins
-  after being marked `UNREACHABLE` or `REMOVED` gets a fresh lease and must
-  reconcile its locally-running containers against current assignment
-  generations before resuming anything (self-fencing, §5.4) — it does not
-  get to assume its old work is still valid.
+- **REMOVED**: retained in the API vocabulary; the current removal operation
+  deletes the node record rather than persisting this phase. Rejoining nodes
+  must reconcile local containers against current assignment generations
+  before resuming work (self-fencing, §5.4).
 
-This is a working model, not frozen — SUSPECT's exact threshold semantics
-are revisited once real heartbeat behavior is measured (Phase 13).
+The current transitions are implemented in the
+[lease monitor](../../internal/lease/monitor.go). A live lease can restore
+`UNREACHABLE` to `READY`; it does not restore revoked assignment authority.
 
 ### 5.2 Task lifecycle
 
 A Task is a desired replica slot owned by the workload controller. It is
 control-plane state, not a process.
 
-```text
-PENDING ──(scheduler binds)──► SCHEDULED ──(gliderd reports RUNNING
-   ▲                               │           for current generation)──► RUNNING
-   │                               │                                         │
-   │        assignment fenced      │                                         │
-   │        (node lost, §5.4) ─────┴─────────────────────────────────────────┤
-   │                                                                         │
-   └─────────────────────── rescheduled: new generation, back to PENDING ◄──┘
-                                                                              │
-                                                  desired replicas decreased, │
-                                                  or workload deleted        │
-                                                                              ▼
-                                                                        TERMINATING
-                                                                              │
-                                                                       node confirms
-                                                                       container gone
-                                                                              ▼
-                                                                        TERMINATED
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+stateDiagram-v2
+    direction TB
+    accTitle: Task slot — scheduling, restart and terminal completion
+    accDescr: Binding changes pending to scheduled. Generation-checked observation promotes running. Revocation returns a slot to pending; completion records terminated.
+    PENDING --> SCHEDULED: atomic bind + reservation
+    SCHEDULED --> RUNNING: current generation reports running
+    SCHEDULED --> PENDING: revoke assignment
+    RUNNING --> PENDING: eviction or restart policy
+    SCHEDULED --> TERMINATED: terminal launch result
+    RUNNING --> TERMINATED: terminal completion
+    class PENDING,SCHEDULED control
+    class RUNNING worker
+    class TERMINATED store
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
 
-A Task's status is an aggregate of what `gliderd` reports about the
-container(s) run under its current (and immediately prior, during handoff)
-generation — never something the node writes directly as final truth. The
-node reports *observed* container state; the control plane owns the
-interpretation of what that means for the Task.
+**Key:** blue = awaiting execution; green = observed running; purple = recorded terminal result. This is the current store lifecycle, not the local container state machine. Each new bind advances the generation. Deletion is separate: it atomically removes the task/assignment and releases capacity; it does not wait in `TERMINATING` for a node acknowledgment.
+
+A node reports observed state through generation-checked store operations.
+The store validates assignment identity before changing the Task's phase;
+local process existence alone cannot make a stale assignment authoritative.
+`TERMINATING` remains in the API vocabulary but is not the current deletion
+handshake. See [store transitions](../../internal/store/etcd/store.go).
 
 ### 5.3 Assignment lifecycle
 
 An Assignment binds one `(TaskID, Generation)` to one `NodeID`. This is the
-object the atomic scheduling transaction (§21/§22 of the master plan,
-detailed later in `docs/design/scheduling.md` once Phase 12 begins) actually
-creates.
+object the [scheduler's atomic transaction](../../internal/scheduler/controller.go)
+creates together with its capacity reservation.
 
-```text
-UNBOUND ──(scheduler CAS bind)──► BOUND(gen N, node X)
-                                        │
-                    ┌───────────────────┼───────────────────┐
-                    ▼                   ▼                   ▼
-              CONFIRMED            REJECTED            SUPERSEDED
-         (node acked, started    (node declines —    (a bind for gen N+1
-          container under gen N)  e.g. resources     was created before
-                    │              didn't actually    node confirmed gen N;
-                    │              fit on arrival)     happens under races)
-                    │                   │                   │
-                    └─────────► task returns to PENDING for a fresh bind ◄──┘
-                    │
-                    ▼
-                 FENCED
-         (control plane declares node's lease expired;
-          generation N is no longer executable by anyone,
-          including the node itself if it reappears)
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart TB
+    accTitle: Assignment authority — one generation, explicit invalidation
+    accDescr: A compare-and-swap bind creates an assignment. Current-generation status can confirm execution. Revocation requeues the task, while supersession already establishes newer authority.
+    unbound["UNBOUND<br/>Task awaits placement"]:::control
+    bound[("BOUND · generation N<br/>Task + node + reservation")]:::store
+    confirmed["CONFIRMED<br/>Generation-checked running report"]:::worker
+    fenced["FENCED / REVOKED<br/>Generation N loses authority"]:::failure
+    newer["SUPERSEDED<br/>Newer assignment is current"]:::failure
+    retry["PENDING<br/>Eligible for a fresh bind"]:::control
+    unbound -->|"Scheduler CAS"| bound
+    bound -->|"Node realizes N"| confirmed
+    bound -->|"Eviction / revocation"| fenced
+    confirmed -->|"Eviction / restart"| fenced
+    confirmed -->|"Newer generation wins"| newer
+    fenced -->|"Release reservation"| retry
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
 
+**Key:** these are conceptual authority labels, not stored `Assignment.Phase` enum values. Purple = durable binding; green = confirmed execution; amber = invalidated authority. A confirmed assignment stays active until revoked or superseded. Supersession does not requeue an already-bound newer generation. CAS means compare-and-swap.
+
 Invariant: **at most one non-superseded, non-fenced generation is
-executable, per task, at any moment.** `gliderd` must check this before
+authoritative per task at any moment.** This does not guarantee that an old
+process has already stopped. `gliderd` must check authority before
 acting (see §5.4) rather than trusting that whatever it was told to run is
 still current.
 
@@ -278,35 +290,30 @@ considers current for a task. And a well-behaved node self-fences — if it
 cannot renew its lease before an uncertainty deadline, it stops workloads it
 holds under that lease rather than waiting to be told. This bounds the
 *window* of possible double-execution to the self-fencing deadline; it does
-not eliminate it. Full protocol detail (exact deadlines, message formats) is
-specified when Phase 13 begins and becomes ADR-0007; this section fixes only
-the safety property the later design must satisfy.
+not eliminate it. The implemented lease and recovery contracts are described
+in [leases and reconciliation](../design/leases-overlay-workloads-health.md)
+and the [failure model](../design/failure-model.md).
 
 ## 6. Component map
 
-```text
-control plane (replicated, leader-elected where stateful in-memory
-work is involved — e.g. the scheduler's binding loop)
-    ├─ API server        gRPC surface, spec validation, versioning boundary
-    ├─ workload controller   desired replicas -> Task objects
-    ├─ node controller       lease tracking -> Node lifecycle (§5.1)
-    ├─ rollout controller    generation changes -> phased Task replacement
-    ├─ service controller    selector -> endpoint set (healthy Tasks only)
-    ├─ scheduler          pending Tasks -> filter -> score -> atomic bind
-    └─ etcd               durable desired state, status, leases, CAS, watch
+| Execution boundary | Components | Responsibility |
+|---|---|---|
+| `glider-controlplane` · every replica | API server | gRPC, authentication, validation and versioning |
+| `glider-controlplane` · elected leader | Workload and rollout controllers | Replica slots and readiness-gated replacement |
+| `glider-controlplane` · elected leader | Node and service controllers | Lease health and ready endpoint sets |
+| `glider-controlplane` · elected leader | Scheduler | Filter, score and atomically bind pending tasks |
+| Separate etcd cluster | Durable store | Desired state, observations, leases, transactions and watches |
+| `gliderd` · each worker | Reconciler | Check assignment authority and drive idempotent Ensure operations |
+| `gliderd` · each worker | Image store and snapshotter | Verified content, immutable layers and writable OverlayFS roots |
+| `gliderd` and runtime helpers | Runtime and network driver | Namespaces, cgroups, security, veth/bridge, IPAM and VXLAN |
 
-gliderd (per node, independent, no direct node-to-node coordination)
-    ├─ runtime        namespaces, pivot_root, cgroup v2, capabilities, seccomp
-    ├─ image store     content-addressed blobs, manifest/config, layer unpack
-    ├─ snapshotter     OverlayFS lower/upper/work per container
-    ├─ network agent   netns, veth, bridge, IPAM, (later) VXLAN
-    └─ reconciler      watch assignments for this node, drive Ensure* calls
-```
+The table is an ownership map, not a call graph. etcd is a separate service,
+not an embedded control-plane component. The [container view](container-view.md)
+shows process connections and the worker component diagram.
 
-`gliderd` never talks to another `gliderd` directly in the single-node and
-early multi-node design; all coordination is mediated by the control plane
-and etcd. Direct node-to-node dataplane traffic (container-to-container
-packets) is the one deliberate exception, starting at Phase 14.
+Workers coordinate assignments through etcd rather than peer-to-peer agent
+messages. Cross-node workload packets use the VXLAN dataplane; this is distinct
+from control-plane coordination.
 
 ## 7. Non-goals
 

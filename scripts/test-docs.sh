@@ -23,7 +23,7 @@ for source in "${WORK}"/*.mmd; do
 	fi
 done
 
-echo "MERMAID GREEN: every architecture diagram rendered with mermaid-cli 11.15.0"
+echo "MERMAID GREEN: every documentation diagram rendered with mermaid-cli 11.15.0"
 if [ -n "${OUTPUT_DIR}" ]; then
 	mkdir -p "${OUTPUT_DIR}"
 	cp "${WORK}"/*.mmd "${WORK}"/*.svg "${WORK}"/*.png "${OUTPUT_DIR}/"

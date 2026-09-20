@@ -75,12 +75,24 @@ operator invoking `glider-runtime` directly from an interactive shell),
 Glider bootstraps its own delegation once, idempotently
 (`Manager.EnsureDelegated`):
 
-```text
-mkdir <cgroup2-mount>/glider/_supervisor          (idempotent)
-move THIS process's own pid into _supervisor       (never anyone else's pid)
-enable cpu,memory,pids in <cgroup2-mount>/cgroup.subtree_control
-enable cpu,memory,pids in <cgroup2-mount>/glider/cgroup.subtree_control
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart LR
+    accTitle: cgroup delegation — isolate the caller before enabling controllers
+    accDescr: Create the shared supervisor cgroup, move only the calling process into it, then enable CPU, memory and PID controllers at the parent and Glider roots.
+    create["Ensure _supervisor<br/>Shared permanent child"]:::control
+    move["Move calling PID only<br/>Never relocate foreign tasks"]:::worker
+    enable["Enable cpu / memory / pids<br/>Parent root, then glider/"]:::control
+    create -->|"Idempotent bootstrap"| move
+    move -->|"No internal processes"| enable
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** arrows show host-side setup order. Blue = controller configuration; green = owned process placement. Other processes blocking delegation cause an explicit error, not forced relocation.
 
 Moving the calling process into `_supervisor` (a child of the Glider
 subtree root, not the subtree root itself) vacates **both** the true
@@ -210,23 +222,31 @@ makes.
 **Attachment ordering** (the critical Phase 4 invariant: *a workload must
 not run before Glider has established cgroup membership and limits*):
 
-```text
-launcher:
-  compute container cgroup path (deterministic from ContainerID)
-  record CREATING (durable, before any resource exists)
-  EnsureDelegated (idempotent bootstrap, §2)
-  Create container cgroup + write cpu.max/memory.max/pids.max
-      ↓ (host-side only; glider-init does not exist yet)
-  clone() glider-init (new namespaces, still in the launcher's own cgroup)
-  wait for glider-init's "ready" (mount setup complete)
-  Attach glider-init's host PID to the container cgroup
-  VerifyAttached (real /proc/<pid>/cgroup evidence, not just a
-                  successful write — §14 of the phase brief)
-  record CREATED (durable)
-      ↓
-  signal glider-init "go"
-  glider-init: pivot_root, then fork+exec the workload
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","actorBkg":"#e8f0ff","actorBorder":"#3563a4","actorTextColor":"#183b6a","signalColor":"#64748b","signalTextColor":"#172b4d","noteBkgColor":"#fff4db","noteBorderColor":"#b9892a","noteTextColor":"#634615"},"sequence":{"mirrorActors":false,"messageMargin":26}}}%%
+sequenceDiagram
+    accTitle: cgroup launch ordering — no workload before verified limits
+    accDescr: The launcher persists creation intent, configures limits, waits for init readiness, verifies cgroup membership and records CREATED before allowing workload execution.
+    autonumber
+    participant L as Host launcher
+    participant C as cgroup v2
+    participant I as glider-init
+    participant W as Workload
+    L->>L: Compute path and persist CREATING
+    L->>C: Ensure delegation and create limited cgroup
+    L->>I: clone flags + re-exec
+    I->>I: Prepare mounts
+    I-->>L: ready byte · pipe
+    L->>C: Attach init host PID
+    L->>L: Verify /proc/PID/cgroup membership
+    L->>L: Complete network hook and persist CREATED
+    L->>I: go byte · pipe
+    I->>I: pivot_root
+    I->>W: fork + exec
+    Note over C,W: Workload inherits configured membership without another attach
 ```
+
+**Key:** solid = host operations, pipe writes or process creation; dashed = ready reply. CREATING is durable before resource creation; CREATED is durable before go. Failed membership verification aborts launch.
 
 Because cgroup membership is inherited automatically on fork, the
 workload — forked by glider-init only *after* glider-init itself is

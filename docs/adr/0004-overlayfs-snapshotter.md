@@ -27,12 +27,28 @@ block device layout for `/var/lib/glider`.
 
 Use **OverlayFS** as the only snapshotter backend. Per-container layout:
 
-```text
-containers/<container-id>/
-    upper/    # writable layer for this container
-    work/     # overlay's required scratch directory
-    merged/   # the mount point actually used as the container's rootfs
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart TB
+    accTitle: OverlayFS snapshot — shared immutable layers, private writes
+    accDescr: Immutable image lower directories combine with a container-private upper layer and work directory to form its merged root filesystem.
+    layers[("Image layers<br/>Shared immutable lowerdirs")]:::store
+    upper[("upper/<br/>Private writable layer")]:::store
+    work["work/<br/>Private OverlayFS scratch"]:::external
+    merged["merged/<br/>Container rootfs mount"]:::worker
+    process["Isolated workload"]:::worker
+    layers -->|"Read-only base"| merged
+    upper -->|"Copy-on-write changes"| merged
+    work -->|"Mount support"| merged
+    merged -->|"pivot_root target"| process
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** purple = persisted image or writable data; gray = private scratch; green = execution view. Arrows show mount inputs and use, not copies of whole layers. upper/ and work/ share a filesystem; their parent is per-container. The implementation uses snapshots/<container-id>/, documented in [image store](../design/image-store.md).
 
 `lowerdir` is the (possibly multi-layer) unpacked, immutable image content
 from the content store (ADR-0002); `upperdir`/`workdir` are per-container;

@@ -44,19 +44,39 @@ Related: [runtime.md](runtime.md) (namespace/mount mechanics this builds on),
 Layers are cumulative, not alternatives — each narrows what a workload can
 do regardless of whether another layer has a gap:
 
-```text
-namespaces (runtime.md §2)         — what the process can see
-    +
-filesystem isolation (runtime.md §4) — what the process can reach
-    +
-cgroup v2 (Phase 4)                — what the process can consume
-    +
-capability reduction (§3)          — what privileged operations are available at all
-    +
-no_new_privs (§4)                  — whether privilege can increase later
-    +
-seccomp (§5)                       — which syscalls are reachable regardless of capability
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart LR
+    accTitle: Defense in depth — complementary workload restrictions
+    accDescr: Six cumulative controls restrict visibility, filesystem reach, resource use, privileged operations, privilege gain and syscalls. The diagram is not a launch sequence or a claim of a VM boundary.
+    subgraph visibility["VISIBILITY AND REACH"]
+        direction TB
+        ns["Namespaces<br/>What processes can see"]:::worker
+        fs["Filesystem isolation<br/>What paths they can reach"]:::worker
+        ns ~~~ fs
+    end
+    subgraph authority["PRIVILEGE"]
+        direction TB
+        caps["Capabilities<br/>Reduce privileged operations"]:::control
+        nnp["no_new_privs<br/>Prevent exec privilege gains"]:::control
+        caps ~~~ nnp
+    end
+    subgraph enforcement["RESOURCE AND SYSCALL LIMITS"]
+        direction TB
+        cg["cgroup v2<br/>Bound resource consumption"]:::store
+        sc["seccomp<br/>Restrict reachable syscalls"]:::control
+        cg ~~~ sc
+    end
+    visibility ~~~ authority
+    authority ~~~ enforcement
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef failure fill:#fff4db,stroke:#b9892a,color:#634615
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
+
+**Key:** groups classify complementary restrictions, not execution order or separate sandboxes. Green = visibility/reach; blue = privilege/syscall restrictions; purple = resource limits. All controls apply together; none replaces the others.
 
 Seccomp alone is explicitly rejected as a sufficient sandbox (master plan
 §16) — a syscall filter without namespace isolation still lets a process

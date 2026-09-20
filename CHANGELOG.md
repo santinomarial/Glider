@@ -7,6 +7,10 @@ development branch and do not imply a published or certified release.
 
 ### Documentation
 
+- Extended diagram styling across the complete documentation set: 25 rendered
+  figures, including runtime, cgroups, security, image storage, and ADRs.
+- Replaced remaining ASCII flows and clarified historical process models,
+  current node/task transitions, and conceptual assignment authority.
 - Redesigned architecture diagrams with semantic colors, focused views,
   accessible descriptions, and SVG/PNG exports through `make diagrams`.
 - Corrected worker-to-etcd routing, backup ownership, concurrent lease-loss
