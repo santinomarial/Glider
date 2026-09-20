@@ -28,7 +28,24 @@ func TestUnpackRegularDirectorySymlinkAndHardlink(t *testing.T) {
 	if err := os.WriteFile(blob, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	u, err := New(t.TempDir(), Limits{})
+	layerDir := t.TempDir()
+	// Published layers are read-only. Restore directory owner permissions before
+	// t.TempDir removes the fixture when this test runs without root privileges.
+	// WalkDir does not follow symlinks, so cleanup stays inside the fixture.
+	t.Cleanup(func() {
+		if err := filepath.WalkDir(layerDir, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return os.Chmod(path, 0o700)
+			}
+			return nil
+		}); err != nil {
+			t.Errorf("prepare layer fixture cleanup: %v", err)
+		}
+	})
+	u, err := New(layerDir, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +65,15 @@ func TestUnpackRegularDirectorySymlinkAndHardlink(t *testing.T) {
 	hard, _ := os.Stat(filepath.Join(root, "config-hard"))
 	if !os.SameFile(base, hard) {
 		t.Fatal("hardlink did not share inode")
+	}
+	for _, path := range []string{root, filepath.Join(root, "etc"), filepath.Join(root, "etc", "config"), filepath.Join(root, "config-hard")} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o222 != 0 {
+			t.Errorf("published layer entry is writable: %s (%v)", path, info.Mode())
+		}
 	}
 }
 
