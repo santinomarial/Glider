@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation and support
+    url: https://github.com/santinomarial/Glider/blob/main/SUPPORT.md
+    about: Start here for questions, troubleshooting, and reporting guidance.
+  - name: Report a security vulnerability privately
+    url: https://github.com/santinomarial/Glider/security/advisories/new
+    about: Do not disclose suspected vulnerabilities in public issues.

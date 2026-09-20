@@ -2,6 +2,8 @@
 
 **A distributed container platform built directly on Linux primitives.**
 
+[![CI](https://github.com/santinomarial/Glider/actions/workflows/ci.yml/badge.svg)](https://github.com/santinomarial/Glider/actions/workflows/ci.yml)
+
 Glider schedules and runs OCI containers across Linux machines. Written in Go,
 it implements its own runtime, image store, networking, and reconciliation
 controllers using namespaces, cgroup v2, OverlayFS, VXLAN, etcd, and gRPC.
@@ -130,6 +132,11 @@ backup recovery, packaged HA and upgrades, performance checks, and signed
 release verification. It records the tested commit and logs in `dist/evidence`.
 See [the qualification guide](docs/testing/production-gate.md) and
 [performance measurement scope](docs/testing/performance.md).
+
+[GitHub CI](https://github.com/santinomarial/Glider/actions/workflows/ci.yml)
+runs build, vet, unprivileged package/race tests, API policy checks, the demo,
+and documentation rendering. Its status does not replace privileged runtime
+tests or the full software and deployment qualification gates.
 
 ## Project status and limits
 

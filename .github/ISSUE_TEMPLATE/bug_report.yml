@@ -1,0 +1,41 @@
+name: Bug report
+description: Report a reproducible failure in Glider
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For suspected vulnerabilities, use SECURITY.md and private security reporting.
+        Remove credentials, secrets, private hostnames, and identifying operator data.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include the exact Git commit if you built from source.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, architecture, Go version, and kernel/cgroup mode for runtime issues.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reproducible example and exact commands.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and redacted logs
+    validations:
+      required: true

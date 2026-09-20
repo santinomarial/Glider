@@ -60,7 +60,7 @@ for arch in amd64 arm64; do
 	cp packaging/monitoring/glider.rules.yml packaging/monitoring/glider-dashboard.json "${stage}/monitoring/"
 	cp packaging/install.sh "${stage}/install.sh"
 	chmod 0755 "${stage}/install.sh"
-	cp VERSION README.md "${stage}/"
+	cp VERSION README.md LICENSE "${stage}/"
 	archive="${OUTPUT}/glider-${VERSION}-linux-${arch}.tar.gz"
 	create_archive "${stage}" "${archive}"
 	rm -rf "${stage}"

@@ -13,6 +13,13 @@ development branch and do not imply a published or certified release.
 - Added contribution, support, conduct, and roadmap guidance.
 - Licensed the project under MIT.
 
+### Repository automation
+
+- Added public CI for build, vet, unprivileged race tests, API policy, the demo,
+  and documentation rendering.
+- Added issue forms, a pull request template, and weekly dependency updates.
+- Included the MIT license in release archives and installed packages.
+
 ### Existing development work
 
 The development branch includes typed v2 API and CLI support, packaged HA and
