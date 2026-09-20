@@ -19,6 +19,8 @@ development branch and do not imply a published or certified release.
   and documentation rendering.
 - Added issue forms, a pull request template, and weekly dependency updates.
 - Included the MIT license in release archives and installed packages.
+- Fixed read-only image fixture cleanup for tests running without root, while
+  explicitly checking that published layers remain read-only.
 
 ### Existing development work
 
