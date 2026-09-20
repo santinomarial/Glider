@@ -69,3 +69,20 @@ comparisons with production orchestrators.
 Use one main idea per slide. Prefer diagrams, measured output, and a concise
 speaker explanation to copying lists from the README. Keep status consistent
 with the [production-readiness contract](../release/production-readiness.md).
+
+## Export architecture figures
+
+Run `make diagrams` with Docker running to generate SVG and high-resolution
+PNG copies in `dist/diagrams/`. Use the white-background PNGs in slide software;
+keep a link to the [source views and notation](../architecture/README.md).
+
+| Presentation topic | Exported PNG |
+|---|---|
+| Architecture overview | `readme-01.png` |
+| Worker internals | `docs--architecture--container-view-02.png` |
+| Cold image to process | `docs--architecture--runtime-flows-02.png` |
+| Partition recovery | `docs--architecture--runtime-flows-03.png` |
+
+Give each slide a descriptive title and retain the figure's key in the slide
+or speaker notes. Do not crop away state transitions or failure caveats. Check
+legibility at presentation size; a detailed sequence may need its own slide.

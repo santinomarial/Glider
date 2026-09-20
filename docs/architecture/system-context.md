@@ -7,31 +7,35 @@ processes; see the [container view](container-view.md) to zoom in.
 ## Context diagram
 
 ```mermaid
-flowchart LR
-    operator["Platform operator"]
-    workload["Workload owner"]
-    reviewer["Security / release reviewer"]
-
-    glider["Glider cluster<br/>Schedules and runs OCI workloads"]
-
-    registry["OCI registry<br/>Image manifests and blobs"]
-    identity["PKI / certificate manager<br/>Node and operator identities"]
-    backup["Immutable backup storage<br/>Encrypted etcd snapshots"]
-    monitor["Monitoring and paging<br/>Metrics, alerts, dashboards"]
-
-    operator -->|"mTLS gRPC via glider CLI"| glider
-    workload -->|"Declarative workload and service specs"| glider
-    reviewer -->|"Signed release and environment evidence"| glider
-    glider -->|"HTTPS; digest-pinned OCI Distribution API"| registry
-    identity -->|"X.509 issuance and renewal"| glider
-    glider -->|"Encrypted snapshot copy"| backup
-    glider -->|"Prometheus scrape and alert delivery"| monitor
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":50}}}%%
+flowchart TB
+    accTitle: Glider system context — people and external dependencies
+    accDescr: Operators and workload owners use Glider through the CLI. External systems supply images and certificates, scrape metrics, and retain encrypted backups.
+    people(["Platform operators + workload owners<br/>People · lifecycle and workload intent"]):::person
+    glider["GLIDER<br/>Software system · Go / Linux<br/>Schedule, isolate and reconcile OCI workloads"]:::control
+    registry["OCI registry<br/>External system · manifests and blobs"]:::external
+    identity["Certificate manager<br/>External system · identity issuance"]:::external
+    monitor["Prometheus + alert delivery<br/>External system · visibility and paging"]:::external
+    backup[("Off-host backup storage<br/>External system · immutable retention")]:::store
+    people -->|"Workloads + operations<br/>mTLS gRPC via CLI"| glider
+    glider -->|"Resolve + pull verified images<br/>HTTPS OCI Distribution"| registry
+    identity -->|"Provision and renew<br/>X.509 certificates"| glider
+    monitor -->|"Scrape API metrics<br/>HTTPS with mTLS"| glider
+    glider -->|"Operator-managed copy<br/>Encrypted snapshots"| backup
+    classDef person fill:#172b4d,stroke:#172b4d,color:#ffffff
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a,stroke-width:2px
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
 ```
 
-Arrow direction shows the initiating data flow, not organizational ownership.
-All administrative and node control-plane traffic is mutually authenticated.
-Image content is accepted only after digest verification; backup objects are
-encrypted and authenticated before leaving the cluster.
+**Key:** dark rounded node = people; blue = Glider; gray = external service;
+purple cylinder = durable storage. Arrows follow the labeled request or
+delivery. Certificate provisioning and off-host copying are operator-managed
+integrations, not built-in remote services. Monitoring initiates scrapes.
+
+Release reviewers inspect signed artifacts and environment evidence outside
+the runtime request path. Image content is accepted only after digest
+verification; backup objects are encrypted and authenticated before copying.
 
 ## Responsibilities
 

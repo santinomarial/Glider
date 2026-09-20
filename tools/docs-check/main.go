@@ -57,10 +57,11 @@ func main() {
 			errors = append(errors, fmt.Sprintf("%s: %v", rel, err))
 			continue
 		}
-		for _, block := range blocks {
+		for index, block := range blocks {
 			diagram++
 			if *mermaidDir != "" {
-				name := fmt.Sprintf("diagram-%03d.mmd", diagram)
+				stem := strings.ToLower(strings.TrimSuffix(filepath.ToSlash(rel), filepath.Ext(rel)))
+				name := fmt.Sprintf("%s-%02d.mmd", strings.ReplaceAll(stem, "/", "--"), index+1)
 				if err := os.WriteFile(filepath.Join(*mermaidDir, name), []byte(block), 0o644); err != nil {
 					fatal(err)
 				}

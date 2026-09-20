@@ -1,10 +1,13 @@
-.PHONY: test docs api-contract generated-api generate-api security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark runtime-benchmark production-gate environment-contract verify-environment demo release verify-release
+.PHONY: test docs diagrams api-contract generated-api generate-api security vulnerability upgrade-test ha-test fuzz chaos monitoring benchmark runtime-benchmark production-gate environment-contract verify-environment demo release verify-release
 
 test:
 	scripts/test-linux-runtime.sh
 
 docs:
 	scripts/test-docs.sh
+
+diagrams:
+	scripts/test-docs.sh "$(CURDIR)/dist/diagrams"
 
 api-contract:
 	scripts/test-api-contract.sh

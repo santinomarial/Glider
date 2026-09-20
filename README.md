@@ -62,31 +62,36 @@ host with cgroup v2; see [installation](docs/operations/install.md).
 
 ## How it works
 
-This overview shows the operator-to-container path. Solid arrows describe
-requests, writes, or local execution; the dashed arrow describes the node's
-watch on assignments. etcd owns durable cluster state. Host boundaries are
-shown below; registry traffic, administration, and monitoring are omitted.
+Follow the numbered path from declared intent to running containers. Blue
+identifies control-plane logic, purple durable cluster state, and green node
+execution. Solid arrows are requests or writes; the dashed arrow delivers
+assignment updates. This overview omits HA topology and external services.
 
 ```mermaid
-flowchart LR
-    cli["glider CLI"]
-    subgraph control["Control-plane hosts"]
-        api["gRPC API<br/>Admission and RBAC"]
-        controllers["Controllers and scheduler"]
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":45}}}%%
+flowchart TB
+    accTitle: Glider — from desired state to running containers
+    accDescr: The CLI submits intent to the API. Controllers schedule through etcd. Workers watch assignments and reconcile Linux containers, reporting observed status back to etcd.
+    cli(["01 · DECLARE<br/>glider CLI"]):::person
+    subgraph control["CONTROL PLANE"]
+        api["02 · ADMIT<br/>mTLS API · RBAC"]:::control
+        loops["03 · PLACE<br/>Controllers + scheduler"]:::control
     end
-    etcd[("etcd<br/>Desired state and assignments")]
-    subgraph worker["Each Linux worker"]
-        agent["gliderd<br/>Reconciliation"]
-        runtime["Images, network,<br/>namespaces and cgroup v2"]
-        tasks["Workload containers"]
+    store[("etcd · source of truth<br/>Intent · assignments · status")]:::store
+    subgraph node["LINUX WORKER"]
+        agent["04 · RECONCILE<br/>gliderd · assignment watch"]:::worker
+        tasks["05 · EXECUTE<br/>Images · network · isolation<br/>Workload containers"]:::worker
     end
     cli -->|"mTLS gRPC"| api
-    api -->|"mTLS etcd API"| etcd
-    controllers -->|"mTLS etcd transactions"| etcd
-    etcd -.->|"mTLS assignment watch"| agent
-    agent --> runtime
-    runtime --> tasks
-    agent -->|"mTLS status reports"| etcd
+    api -->|"Intent · etcd mTLS"| store
+    loops -->|"CAS bind · etcd mTLS"| store
+    store -.->|"Assignments · etcd mTLS"| agent
+    agent -->|"Ensure local resources"| tasks
+    agent -->|"Status · etcd mTLS"| store
+    classDef person fill:#172b4d,stroke:#172b4d,color:#ffffff
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
 ```
 
 Operators submit desired state through the API. The workload controller creates
@@ -118,6 +123,7 @@ verification and require a running Docker engine:
 
 ```bash
 make docs              # Check Markdown links and render Mermaid diagrams
+make diagrams          # Export SVG/PNG figures for slides and portfolios
 make test              # Build, vet, unit/race and privileged Linux runtime tests
 make production-gate   # Full software qualification with an evidence bundle
 ```

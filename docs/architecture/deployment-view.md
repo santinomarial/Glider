@@ -1,69 +1,88 @@
 # Production deployment view
 
-This view describes the minimum qualified topology and its failure domains.
+This view describes a reference topology and its failure domains.
 It is a deployment model, not proof that a particular installation has passed
 qualification; evidence requirements remain in
 [production readiness](../release/production-readiness.md).
 
-## Topology
+## Request routing and authority
+
+Replicated groups are collapsed here so the routing stays readable. The
+placement table below expands those groups across independent failure domains.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff","clusterBkg":"#f8fafc","clusterBorder":"#cbd5e1"},"flowchart":{"curve":"basis","nodeSpacing":40,"rankSpacing":50}}}%%
 flowchart TB
-    clients["Operators and automation"]
-    lb["Layer 4 load balancer<br/>Stable control-plane endpoint"]
-    registry["Production OCI registry"]
-    backup["Immutable off-host backup storage"]
-    monitoring["External monitoring and paging"]
-    pki["Certificate manager"]
-
-    subgraph zoneA["Failure domain A"]
-        cp1["Control plane 1"]
-        e1["etcd member 1"]
-        w1["Worker 1<br/>gliderd + workloads"]
-    end
-
-    subgraph zoneB["Failure domain B"]
-        cp2["Control plane 2"]
-        e2["etcd member 2"]
-        w2["Worker 2<br/>gliderd + workloads"]
-    end
-
-    subgraph zoneC["Failure domain C"]
-        cp3["Control plane 3"]
-        e3["etcd member 3"]
-    end
-
+    accTitle: Reference deployment — API routing and direct etcd sessions
+    accDescr: An L4 balancer passes mTLS to API replicas. Workers use that endpoint for secrets but connect directly to the three-member etcd quorum for watches, leases and status.
+    clients(["Operators + automation"]):::person
+    lb["L4 load balancer<br/>TCP pass-through · stable API endpoint"]:::external
+    apis["Control-plane hosts<br/>3 API replicas · glider-controlplane<br/>One leads controller loops"]:::control
+    store[("3 etcd members · A / B / C<br/>2-of-3 quorum · peer mTLS<br/>Durable state + leader election")]:::store
+    nodes["Worker hosts<br/>2+ Linux workers · gliderd<br/>Direct etcd client sessions"]:::worker
     clients -->|"mTLS gRPC"| lb
-    lb --> cp1
-    lb --> cp2
-    lb --> cp3
-    cp1 -->|"mTLS etcd client"| e1
-    cp2 -->|"mTLS etcd client"| e2
-    cp3 -->|"mTLS etcd client"| e3
-    e1 <-->|"Raft peer mTLS"| e2
-    e2 <-->|"Raft peer mTLS"| e3
-    e3 <-->|"Raft peer mTLS"| e1
-    w1 -.->|"mTLS watch, status, lease"| lb
-    w2 -.->|"mTLS watch, status, lease"| lb
-    w1 -->|"HTTPS image pull"| registry
-    w2 -->|"HTTPS image pull"| registry
-    e1 -->|"encrypted scheduled snapshot"| backup
-    monitoring -.->|"scrape"| cp1
-    monitoring -.->|"scrape"| cp2
-    monitoring -.->|"scrape"| cp3
-    monitoring -.->|"scrape"| w1
-    monitoring -.->|"scrape"| w2
-    pki -.->|"issue and renew"| cp1
-    pki -.->|"issue and renew"| cp2
-    pki -.->|"issue and renew"| cp3
-    pki -.->|"issue and renew"| w1
-    pki -.->|"issue and renew"| w2
+    lb -->|"Forward TCP · preserve client TLS"| apis
+    apis -->|"Transactions + election · etcd mTLS"| store
+    nodes -->|"Watch / lease / status · etcd mTLS"| store
+    nodes -->|"Secret delivery requests · mTLS gRPC"| lb
+    classDef person fill:#172b4d,stroke:#172b4d,color:#ffffff
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
 ```
 
-The three failure-domain subgraphs must map to genuinely independent host or
-infrastructure failures for the availability claim being made. Placing all
-members in one VM, one host, or one non-redundant storage domain exercises
-process failover but does not qualify host-level high availability.
+**Key:** dark = clients; gray = routing infrastructure; blue = API/controller
+processes; purple cylinder = replicated durable state; green = workers. Arrows
+show connection initiators. Replies and watch events return on the same
+connections. The API load balancer does not proxy etcd watches or leases.
+
+## Failure-domain placement
+
+| Role | Domain A | Domain B | Domain C |
+|---|---|---|---|
+| API replica | Control plane 1 | Control plane 2 | Control plane 3 |
+| Durable state | etcd member 1 | etcd member 2 | etcd member 3 |
+| Workload execution | Worker 1 | Worker 2 | Optional additional workers |
+
+Domains must correspond to independent host or infrastructure failures for
+the availability claim being made. Roles in a column need not share a host.
+Placing every member in one VM or one storage failure domain tests process
+failover, not host availability. etcd's Raft leader and Glider's controller
+leader are separate elections.
+
+## External operations
+
+This view isolates monitoring, image distribution, and backup dependencies
+from the critical scheduling path. It shows service groups, not host placement.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"fontFamily":"Arial, sans-serif","fontSize":"16px","lineColor":"#64748b","primaryTextColor":"#172b4d","edgeLabelBackground":"#ffffff"},"flowchart":{"curve":"basis","nodeSpacing":35,"rankSpacing":50}}}%%
+flowchart LR
+    accTitle: External operations — metrics, images and encrypted backups
+    accDescr: Prometheus scrapes every API replica. Workers pull OCI images. A backup job takes an etcd snapshot and an operator-managed copy moves the encrypted artifact off-host.
+    monitor["Prometheus + paging<br/>External monitoring"]:::external
+    apis["Every API replica<br/>HTTPS metrics endpoint"]:::control
+    nodes["Linux workers<br/>OCI image pipeline"]:::worker
+    registry["OCI registry<br/>Manifests + blobs"]:::external
+    job["Backup job<br/>glider-admin + systemd timer"]:::control
+    store[("etcd quorum")]:::store
+    vault[("Immutable off-host storage")]:::store
+    monitor -->|"Scrape · HTTPS / mTLS"| apis
+    nodes -->|"Pull · HTTPS OCI API"| registry
+    job -->|"Snapshot request · etcd mTLS"| store
+    job -->|"Encrypted artifact<br/>Operator-managed copy"| vault
+    classDef control fill:#e8f0ff,stroke:#3563a4,color:#183b6a
+    classDef store fill:#f1edff,stroke:#7657a8,color:#4c3575
+    classDef worker fill:#e5f5f0,stroke:#23836b,color:#155b49
+    classDef external fill:#f1f4f8,stroke:#78879c,color:#334155
+```
+
+**Key:** blue = operational Glider process; green = workers; gray = external
+service; purple cylinder = durable storage. The backup job encrypts snapshots
+locally; an independently configured job copies them off-host. Certificate
+issuance and renewal apply to all authenticated endpoints and are omitted
+from these paths; see [PKI](../operations/pki.md).
 
 ## Quorum and failure behavior
 
@@ -84,9 +103,11 @@ unpack, logs, and recovery bursts. See [capacity and sizing](../operations/sizin
 
 ## Security zones
 
-- The public or operator-facing boundary terminates only at the load balancer
-  and mTLS API; etcd is never an operator endpoint.
-- etcd peer and client ports are restricted to control-plane identities.
+- The public or operator-facing API boundary contains only the load balancer
+  and mTLS API; etcd is reachable only over restricted internal connections.
+- etcd peer ports admit members only. Client access is restricted to the
+  configured control-plane, worker, and administrative identities; workers
+  need direct etcd connectivity in the current implementation.
 - Worker nodes receive only assignment-scoped secrets for their current
   generation.
 - Backup storage is a distinct failure and credential domain.

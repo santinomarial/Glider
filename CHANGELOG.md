@@ -7,6 +7,10 @@ development branch and do not imply a published or certified release.
 
 ### Documentation
 
+- Redesigned architecture diagrams with semantic colors, focused views,
+  accessible descriptions, and SVG/PNG exports through `make diagrams`.
+- Corrected worker-to-etcd routing, backup ownership, concurrent lease-loss
+  behavior, and the explicit `DELETING` lifecycle state in diagrams.
 - Restructured the README around the local demo, architecture, verification,
   and explicit deployment limits.
 - Added a guided control-plane demo and a portfolio/presentation recording guide.
